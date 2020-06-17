@@ -1,9 +1,13 @@
 # GoCmdScanner
-This is a Golang script to run scan across multiple hostnames/ports and identify hostnames/port which return output matching specific regex, pattern. Where a pattern is not matched, raw output can also be directly displayed.
+This is a Golang script to run scan across multiple hostnames/ports and identify hostnames/port which return output matching specific regex pattern. Where a pattern is not matched, raw output can also be directly displayed.
 
 The regex, pattern is provided as an input signature file in YAML pattern. 
 
 The tool can also be used to run the same command and store the output utilising Go's powerful concurrency pattern across multiple host/port OR in case of AWS across multiple profiles/regions.
+
+In addition the following new features have been added: 
+* Support for providing AWS profile, region to run tests on an environment
+* Support for providing 
 
 The project is inspired by the [nuclei](https://github.com/projectdiscovery/nuclei) project.
 
@@ -42,6 +46,41 @@ smb://125.231.106.110:445
 Run the check on all targets via the command: 
 ```
 cat /tmp/targets.txt | go run cmdscanner.go -paths smb_smbghost_check.yaml cat 
+```
+
+### URL Usage
+`GoCmdScanner` can also be used for making HTTP requests and check response received, similar to how nuclei works.
+
+Example, if we create a signature for robots.txt file in file `http_robots_file.yaml`:
+
+```
+id: http_robots_file
+
+info:
+  name: Look for HTTP Robots.txt file that contain hidden paths generally
+  author: manasmbellani
+  severity: low
+
+checks:
+  - method: GET
+    url:
+      - "{basepath}/robots.txt"
+      - "{basepath}/.robots.txt"
+    matchers:
+      - type: regex
+        regex: "(?i)(Allow: |Disallow: |Sitemap: )"
+```
+
+We can then run the check with a number of URL base-paths (without extensions) defined in file: `/tmp/urls.txt`
+```
+$ cat /tmp/urls.txt
+https://www.google.com
+https://www.msn.com
+https://zol.au
+
+$ cat /tmp/urls.txt | go run gocmdscanner.go -paths http_elmah_logs.yaml
+https://www.google.com:443/robots.txt
+https://www.msn.com:443/robots.txt
 ```
 
 ### AWS-based Usage

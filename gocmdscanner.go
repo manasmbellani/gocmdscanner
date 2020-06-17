@@ -6,8 +6,10 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,8 +20,8 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// DELIM - Delimiter to use when parsing output via regex itself
-const DELIM = "|"
+// Delim - Delimiter to use when parsing output via regex itself
+const Delim = "|"
 
 // DefProtocol - default protocol to use if not specified
 const DefProtocol = "http"
@@ -33,24 +35,43 @@ const DefRegion = "ap-southeast-2"
 // DefProfile - Default AWS profile
 const DefProfile = "default"
 
+// DefHTTPMethod - Default HTTP Method
+const DefHTTPMethod = "GET"
+
+// DefUserAgent - Default user agent string
+const DefUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36"
+
 // Format for an Example YAML signature files
 type signFileStruct struct {
 	ID   string `yaml:"id"`
 	Info struct {
 		Name string `yaml:"name"`
 	} `yaml:"info"`
-	Author   string `yaml:"author"`
-	Severity string `yaml:"severity"`
-	Checks   []struct {
-		Cmd      []string `yaml:"cmd"`
-		CmdDir   string   `yaml:"cmddir"`
-		Notes    []string `yaml:"notes"`
-		Outfile  string   `yaml:"outfile"`
-		Matchers []struct {
-			Type  string `yaml:"type"`
-			Regex string `yaml:"regex"`
-		} `yaml:"matchers"`
-	} `yaml:"checks"`
+	Author   string     `yaml:"author"`
+	Severity string     `yaml:"severity"`
+	Checks   []sigCheck `yaml:"checks"`
+}
+
+// Define a separate struct for checks
+type sigCheck struct {
+	Cmd        []string `yaml:"cmd"`
+	CmdDir     string   `yaml:"cmddir"`
+	URLs       []string `yaml:"url"`
+	HTTPMethod string   `yaml:"method"`
+	Body       []struct {
+		Name  string `yaml:"name"`
+		Value string `yaml:"value"`
+	} `yaml:body`
+	Headers []struct {
+		Name  string `yaml:"name"`
+		Value string `yaml:"value"`
+	} `yaml:"headers"`
+	Notes    []string `yaml:"notes"`
+	Outfile  string   `yaml:"outfile"`
+	Matchers []struct {
+		Type  string `yaml:"type"`
+		Regex string `yaml:"regex"`
+	} `yaml:"matchers"`
 }
 
 // SIGFILEEXT - Extensions for YAML files
@@ -155,15 +176,52 @@ func subTargetParams(cmdToExec string, targetParams map[string]string) string {
 }
 
 // Print the information about the target that has been discovered matching
-// the pattern
-func printDetection(sigID string, target map[string]string) {
+// the pattern. For web detections, display additional path as well.
+func formatDetection(sigID string, target map[string]string) string {
+
+	pathToPrint := ""
 	if target["protocol"] == "aws" {
-		fmt.Println("[" + sigID + "] " + target["protocol"] + "://" + target["profile"] + ":" +
-			target["region"])
+		pathToPrint = "[" + sigID + "] " + target["protocol"] + "://" +
+			target["profile"] + ":" + target["region"]
 	} else {
-		fmt.Println("[" + sigID + "] " + target["protocol"] + "://" + target["hostname"] + ":" +
-			target["port"])
+		fullURLPath, fullURLPathFound := target["fullURLPath"]
+
+		if fullURLPathFound {
+			pathToPrint = fullURLPath
+		} else {
+			pathToPrint = "[" + sigID + "] " + target["protocol"] + "://" + target["hostname"] + ":" +
+				target["port"]
+		}
 	}
+
+	return pathToPrint
+}
+
+// Get given match config and search output for keywords. If found, then
+func runMatch(checkConfig sigCheck, outputToSearch string) bool {
+	matcherFound := false
+
+	// Determine what type of matcher was provided
+	matchers := checkConfig.Matchers
+	for _, matcher := range matchers {
+		matcherType := matcher.Type
+		if strings.ToLower(matcherType) == "regex" {
+			strToSearch := strings.ReplaceAll(outputToSearch, "\n", Delim)
+			strToSearch = strings.ReplaceAll(strToSearch, "\r", Delim)
+			regex := matcher.Regex
+			found, err := regexp.MatchString(regex, strToSearch)
+			if err != nil {
+				log.Fatalf("[-] Regex Error: %s\n", err.Error())
+			}
+			if found == true {
+				matcherFound = true
+				break
+			}
+		} else {
+			log.Fatalf("[-] Unknown matcher type: %s\n", matcherType)
+		}
+	}
+	return matcherFound
 }
 
 // Process the command and perform the regex output
@@ -185,18 +243,112 @@ func worker(sigFile string, target map[string]string, verbose bool,
 
 	// First get the list of all checks to perform from file
 	myChecks := sigFileContent.Checks
+
 	for _, myCheck := range myChecks {
 
 		// Get the commmand directory to execute this command in
 		cmdDir := myCheck.CmdDir
 
-		// Run all the commands and collect the output
-		cmdsToExec := myCheck.Cmd
+		// Store commands output
+
+		// Run all the commands and collect output
 		cmdsOutput := ""
+		requestOutput := ""
+		cmdsToExec := myCheck.Cmd
 		for _, cmdToExec := range cmdsToExec {
+
+			// Run the commands
 			cmdsToExecSub := subTargetParams(cmdToExec, target)
 			cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, verbose,
 				cmdDir)
+
+			// Check for a match from response
+			matcherFound := runMatch(myCheck, cmdsOutput)
+			if matcherFound {
+				fmt.Println(formatDetection(sigID, target))
+			}
+		}
+
+		// Run any web requests on URLs, if provided
+		urls := myCheck.URLs
+
+		for _, urlToCheck := range urls {
+			httpMethod := strings.ToUpper(myCheck.HTTPMethod)
+			if httpMethod == "" {
+				httpMethod = DefHTTPMethod
+			}
+
+			// Build the URL to request + save it
+			urlToCheckSub := subTargetParams(urlToCheck, target)
+			target["fullURLPath"] = urlToCheckSub
+
+			// Build a HTTP request template
+			client := &http.Client{}
+			var body io.Reader
+
+			// Prepare the POST body
+			var strBodyParams []string
+			if myCheck.Body != nil {
+				for _, bodySet := range myCheck.Body {
+					name := bodySet.Name
+					value := bodySet.Value
+					strBodyParams = append(strBodyParams, name+"="+value)
+				}
+			}
+			strBody := strings.Join(strBodyParams, "&")
+			body = strings.NewReader(strBody)
+
+			// Setup a request template
+			req, _ := http.NewRequest(httpMethod, urlToCheckSub, body)
+
+			// Set the user agent string header
+			req.Header.Set("User-Agent", DefUserAgent)
+
+			// Set custom headers if any are provided
+			if myCheck.Headers != nil {
+				for _, header := range myCheck.Headers {
+					name := header.Name
+					value := header.Value
+					req.Header.Set(name, value)
+				}
+			}
+
+			// Verbose message to be printed to let the user know
+			if verbose {
+				log.Printf("Making %s request to URL: %s\n", httpMethod,
+					urlToCheckSub)
+			}
+
+			// Send the web request
+			resp, _ := client.Do(req)
+
+			if resp != nil {
+
+				// Read the response body
+				respBody, _ := ioutil.ReadAll(resp.Body)
+
+				// Read the response status code as string
+				statusCode := fmt.Sprintf("%d", resp.StatusCode)
+
+				// Read the response headers as string
+				respHeaders := resp.Header
+				respHeadersStr := ""
+				s := ""
+				for k, v := range respHeaders {
+					s = fmt.Sprintf("%s=\"%s\"", k, strings.Join(v, ","))
+					respHeadersStr += s + ";"
+				}
+
+				// Combine status code, response headers and body
+				requestOutput = string(statusCode) + "\n" + respHeadersStr + "\n" +
+					string(respBody)
+
+				// Check for a match from the response
+				matcherFound := runMatch(myCheck, requestOutput)
+				if matcherFound {
+					fmt.Println(formatDetection(sigID, target))
+				}
+			}
 		}
 
 		// Are there any special notes? Write them to the output
@@ -210,9 +362,13 @@ func worker(sigFile string, target map[string]string, verbose bool,
 		// Check if we need to store output to output file
 		outfile := myCheck.Outfile
 		if outfile != "" {
-			// Write full command output to file
+
+			// Get the command and web request output together to write to file
+			contentToWrite := cmdsOutput + "\n" + requestOutput
+
+			// Write output to file
 			outfile = subTargetParams(outfile, target)
-			ioutil.WriteFile(outfile, []byte(cmdsOutput), 0644)
+			ioutil.WriteFile(outfile, []byte(contentToWrite), 0644)
 
 			// Let user know that we wrote results to an output file
 			if verbose {
@@ -220,25 +376,6 @@ func worker(sigFile string, target map[string]string, verbose bool,
 			}
 		}
 
-		// Determine what type of matcher was provided
-		matchers := myCheck.Matchers
-		for _, matcher := range matchers {
-			matcherType := matcher.Type
-			if strings.ToLower(matcherType) == "regex" {
-				strToSearch := strings.ReplaceAll(cmdsOutput, "\n", DELIM)
-				strToSearch = strings.ReplaceAll(strToSearch, "\r", DELIM)
-				regex := matcher.Regex
-				found, err := regexp.MatchString(regex, strToSearch)
-				if err != nil {
-					log.Fatalf("[-] Regex Error: %s\n", err.Error())
-				}
-				if found == true {
-					printDetection(sigID, target)
-				}
-			} else {
-				log.Fatalf("[-] Unknown matcher type: %s\n", matcherType)
-			}
-		}
 	}
 }
 
@@ -323,9 +460,11 @@ func main() {
 	for scanner.Scan() {
 		numTargetsRead++
 
-		// Read the hostname/ip address and port from user
+		// Read the hostname/ip address, port OR URL paths from user
 		line := scanner.Text()
 		if line != "" {
+			// Split based on: for hostname & port OR protocol & hostname & port
+			// specified
 			lineSplits := strings.Split(line, ":")
 
 			target := make(map[string]string)
@@ -334,39 +473,76 @@ func main() {
 
 				target["protocol"] = DefProtocol
 				if target["protocol"] == "aws" {
-					// Input provided: <hostname|aws_profile>
+					// Input provided: <hostname|aws_profile>/<path>
 					// A Profile is provided if aws is the default protocol
 					target["profile"] = lineSplits[0]
 					target["region"] = DefProfile
 				} else {
-					// Only hostname is provided
-					target["hostname"] = lineSplits[0]
+					// Input provided: <hostname> OR <hostname>/<path>
+					hostnamePath := lineSplits[0]
+
+					if strings.Index(hostnamePath, "/") >= 0 {
+						target["hostname"] = strings.Split(hostnamePath, "/")[0]
+						target["path"] = strings.Join(
+							strings.Split(hostnamePath, "/")[1:],
+							"/")
+					} else {
+						target["hostname"] = hostnamePath
+						target["path"] = ""
+					}
 					target["port"] = DefPort
 				}
 			} else if len(lineSplits) == 2 {
-				if strings.Index(lineSplits[0], "/") >= 0 {
+				if strings.Index(lineSplits[1], "//") >= 0 {
 					// Input provided: protocol://<hostname|aws_profile>
 					target["protocol"] = lineSplits[0]
 					if target["protocol"] == "aws" {
+						// Input provided: aws://<hostname|aws_profile>
 						target["profile"] = strings.ReplaceAll(lineSplits[1], "/", "")
 						target["region"] = DefProfile
 					} else {
-						target["hostname"] = strings.ReplaceAll(lineSplits[1], "/", "")
-						target["port"] = DefPort
+						// Input provided: protocol://<hostname>/<path>
+						hostnamePath := strings.Split(lineSplits[1], "//")[1]
+						if strings.Index(hostnamePath, "/") >= 0 {
+							target["hostname"] = strings.Split(hostnamePath, "/")[0]
+							target["path"] = strings.Join(
+								strings.Split(hostnamePath, "/")[1:],
+								"/")
+						} else {
+							target["hostname"] = hostnamePath
+							target["path"] = ""
+						}
+						if target["protocol"] == "https" {
+							target["port"] = "443"
+						} else {
+							target["port"] = "80"
+						}
 					}
+
 				} else {
 					// Input provided: <hostname|aws_profile>:<port|region>
 					target["protocol"] = DefProtocol
 					if target["protocol"] == "aws" {
+						// Input provided: <aws_profile>:<region>
 						target["profile"] = lineSplits[0]
 						target["region"] = lineSplits[1]
 					} else {
+						// Input provided: <hostname>:<port>
 						target["hostname"] = lineSplits[0]
-						target["port"] = lineSplits[1]
+						portPath := lineSplits[1]
+						if strings.Index(portPath, "/") >= 0 {
+							target["port"] = strings.Split(portPath, "/")[0]
+							target["path"] = strings.Join(
+								strings.Split(portPath, "/")[1:],
+								"/")
+						} else {
+							target["port"] = portPath
+							target["path"] = ""
+						}
 					}
 				}
 			} else {
-				// Input provided: protocol://<hostname|aws_profile>:<port|region>
+				// Input provided: protocol://<hostname|aws_profile>:<port|region>/<path>
 				target["protocol"] = lineSplits[0]
 				if target["protocol"] == "aws" {
 					target["profile"] = strings.ReplaceAll(lineSplits[1], "/", "")
@@ -374,9 +550,32 @@ func main() {
 				} else {
 					// Protocol, hostname, port all specified
 					target["hostname"] = strings.ReplaceAll(lineSplits[1], "/", "")
-					target["port"] = lineSplits[2]
+					portPath := lineSplits[2]
+					if strings.Index(portPath, "/") >= 0 {
+						target["port"] = strings.Split(portPath, "/")[0]
+						target["path"] = strings.Join(
+							strings.Split(portPath, "/")[1:],
+							"/")
+					} else {
+						target["port"] = portPath
+						target["path"] = ""
+					}
 				}
 			}
+
+			// Define a base path on which to run the scan/make request
+			target["basepath"] = target["protocol"] + "://" + target["hostname"] +
+				":" + target["port"]
+			if target["path"] != "" {
+				target["basepath"] += "/" + target["path"]
+
+				// Remove trailing slash in basepath, so URLs created correctly
+				basePath := target["basepath"]
+				if basePath[len(basePath)-1] == '/' {
+					target["basepath"] = basePath[:len(basePath)-1]
+				}
+			}
+
 			// Limit number of hosts/targets processed
 			if *limit > 0 && numTargetsRead > *limit {
 				break
