@@ -7,7 +7,7 @@ The tool can also be used to run the same command and store the output utilising
 
 In addition the following new features have been added: 
 * Support for providing AWS profile, region to run tests on an environment
-* Support for providing 
+* Support for performing web requests, and checking output via regex similar to `nuclei`
 
 The project is inspired by the [nuclei](https://github.com/projectdiscovery/nuclei) project.
 
