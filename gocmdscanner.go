@@ -452,6 +452,13 @@ func main() {
 	// Get all the Yaml files
 	sigFiles := findSigFiles(filesToParse)
 
+	// parse information from each signature file and store it so it doesn't
+	// have to be read again & again
+	sigFileContents := make(map[string]signFileStruct, len(sigFiles))
+	for _, sigFile := range sigFiles {
+		sigFileContents[sigFile] = parseSigFile(sigFile)
+	}
+
 	// Prepare a wait group for concurrent processing of files
 	var wg sync.WaitGroup
 
@@ -586,12 +593,11 @@ func main() {
 
 			// Start processing each file concurrently for the given hostname
 			for _, sigFile := range sigFiles {
-
-				// Open the signature file and parse the content structure
-				// More efficient to do this here
-				sigFileContent := parseSigFile(sigFile)
-
 				wg.Add(1)
+
+				// Get the signature file content previously opened and read
+				sigFileContent := sigFileContents[sigFile]
+
 				go worker(sigFileContent, target, *verbose, &wg)
 			}
 		}
