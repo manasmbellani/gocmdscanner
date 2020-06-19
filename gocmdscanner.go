@@ -230,13 +230,10 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 
 // Worker function parses each YAML signature file, runs relevant commands as
 // present in  each file and performs the matching operation
-func worker(sigFile string, target map[string]string, verbose bool,
+func worker(sigFileContent signFileStruct, target map[string]string, verbose bool,
 	wg *sync.WaitGroup) {
 	// Need to let the waitgroup know that the function is done at the end...
 	defer wg.Done()
-
-	// Open the signature file and parse the content
-	sigFileContent := parseSigFile(sigFile)
 
 	// ID of the signature
 	sigID := sigFileContent.ID
@@ -342,6 +339,12 @@ func worker(sigFile string, target map[string]string, verbose bool,
 				// Combine status code, response headers and body
 				requestOutput = string(statusCode) + "\n" + respHeadersStr + "\n" +
 					string(respBody)
+
+				// Verbose message to be printed to let the user know
+				if verbose {
+					log.Printf("Making %s request to URL: %s\n", httpMethod,
+						urlToCheckSub)
+				}
 
 				// Check for a match from the response
 				matcherFound := runMatch(myCheck, requestOutput)
@@ -583,8 +586,13 @@ func main() {
 
 			// Start processing each file concurrently for the given hostname
 			for _, sigFile := range sigFiles {
+
+				// Open the signature file and parse the content structure
+				// More efficient to do this here
+				sigFileContent := parseSigFile(sigFile)
+
 				wg.Add(1)
-				go worker(sigFile, target, *verbose, &wg)
+				go worker(sigFileContent, target, *verbose, &wg)
 			}
 		}
 	}
