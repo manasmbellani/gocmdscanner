@@ -378,8 +378,8 @@ func worker(sigFileContent signFileStruct, target map[string]string, verbose boo
 				log.Printf("[*] Wrote results to outfile: %s\n", outfile)
 			}
 		}
-
 	}
+	//log.Printf("Completed check on path: %s\n", target["basepath"])
 }
 
 func main() {
