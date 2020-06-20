@@ -20,6 +20,9 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// NumOutChars - Number of output characters to print
+const NumOutChars = 1000
+
 // Delim - Delimiter to use when parsing output via regex itself
 const Delim = "|"
 
@@ -123,7 +126,7 @@ func parseSigFile(sigFile string) signFileStruct {
 
 // Execute a command to get the output, error. Command is executed when in the
 // optionally specified 'cmdDir' OR it is executed with the current working dir
-func execCmd(cmdToExec string, verbose bool, cmdDir string) string {
+func execCmd(cmdToExec string, cmdDir string) string {
 	// Get the original working directory
 	owd, _ := os.Getwd()
 
@@ -135,9 +138,7 @@ func execCmd(cmdToExec string, verbose bool, cmdDir string) string {
 	// Get my current working directory
 	cwd, _ := os.Getwd()
 
-	if verbose {
-		log.Printf("[v] Executing cmd: %s in dir: %s\n", cmdToExec, cwd)
-	}
+	log.Printf("[v] Executing cmd: %s in dir: %s\n", cmdToExec, cwd)
 
 	cmd := exec.Command("/bin/bash", "-c", cmdToExec)
 	out, err := cmd.CombinedOutput()
@@ -156,9 +157,16 @@ func execCmd(cmdToExec string, verbose bool, cmdDir string) string {
 	}
 
 	totalOut := (outStr + "\n" + errStr)
-	if verbose {
-		log.Printf("[v] Output of cmd '%s':\n%s\n", cmdToExec, totalOut)
+
+	// Print only specific number of characters
+	partialTotalOut := ""
+	if len(totalOut) > NumOutChars {
+		partialTotalOut = totalOut[:NumOutChars] + " ..."
+	} else {
+		partialTotalOut = totalOut
 	}
+
+	log.Printf("Partial Output of cmd '%s':\n%s \n", cmdToExec, partialTotalOut)
 
 	// Switch back to the original working directory
 	os.Chdir(owd)
@@ -230,7 +238,7 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 
 // Worker function parses each YAML signature file, runs relevant commands as
 // present in  each file and performs the matching operation
-func worker(sigFileContent signFileStruct, target map[string]string, verbose bool,
+func worker(sigFileContent signFileStruct, target map[string]string,
 	wg *sync.WaitGroup) {
 	// Need to let the waitgroup know that the function is done at the end...
 	defer wg.Done()
@@ -256,8 +264,7 @@ func worker(sigFileContent signFileStruct, target map[string]string, verbose boo
 
 			// Run the commands
 			cmdsToExecSub := subTargetParams(cmdToExec, target)
-			cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, verbose,
-				cmdDir)
+			cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
 
 			// Check for a match from response
 			matcherFound := runMatch(myCheck, cmdsOutput)
@@ -311,10 +318,9 @@ func worker(sigFileContent signFileStruct, target map[string]string, verbose boo
 			}
 
 			// Verbose message to be printed to let the user know
-			if verbose {
-				log.Printf("Making %s request to URL: %s\n", httpMethod,
-					urlToCheckSub)
-			}
+
+			log.Printf("Making %s request to URL: %s\n", httpMethod,
+				urlToCheckSub)
 
 			// Send the web request
 			resp, _ := client.Do(req)
@@ -341,10 +347,8 @@ func worker(sigFileContent signFileStruct, target map[string]string, verbose boo
 					string(respBody)
 
 				// Verbose message to be printed to let the user know
-				if verbose {
-					log.Printf("Making %s request to URL: %s\n", httpMethod,
-						urlToCheckSub)
-				}
+				log.Printf("Making %s request to URL: %s\n", httpMethod,
+					urlToCheckSub)
 
 				// Check for a match from the response
 				matcherFound := runMatch(myCheck, requestOutput)
@@ -374,9 +378,8 @@ func worker(sigFileContent signFileStruct, target map[string]string, verbose boo
 			ioutil.WriteFile(outfile, []byte(contentToWrite), 0644)
 
 			// Let user know that we wrote results to an output file
-			if verbose {
-				log.Printf("[*] Wrote results to outfile: %s\n", outfile)
-			}
+			log.Printf("[*] Wrote results to outfile: %s\n", outfile)
+
 		}
 	}
 	//log.Printf("Completed check on path: %s\n", target["basepath"])
@@ -621,7 +624,7 @@ func main() {
 				// Get the signature file content previously opened and read
 				sigFileContent := sigFileContents[sigFile]
 
-				go worker(sigFileContent, target, verbose, &wg)
+				go worker(sigFileContent, target, &wg)
 			}
 		}
 	}
