@@ -43,9 +43,17 @@ smb://165.234.132.178:445
 smb://125.231.106.110:445
 ```
 
-Run the check on all targets via the command: 
+Run the check on all targets via the command using 10 goroutines ("light-threads") for concurrency, use `-mt`: 
 ```
-cat /tmp/targets.txt | go run cmdscanner.go -paths smb_smbghost_check.yaml cat 
+cat /tmp/targets.txt | go run cmdscanner.go -paths smb_smbghost_check.yaml cat -mt 10
+```
+
+To show the targets that are being processed, use `-st` command to write progress to STDERR location, and write discovered assets to `out.txt`:
+```
+cat /tmp/targets.txt | go run cmdscanner.go -paths smb_smbghost_check.yaml cat -st | tee out.txt
+Testing sigfile: smb_smbghost_check on target: map[basepath:https://www.google.com]
+...
+
 ```
 
 ### URL Usage

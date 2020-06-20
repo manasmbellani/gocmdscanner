@@ -20,6 +20,9 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// NumOutChars - Number of output characters to print
+const NumOutChars = 1000
+
 // Delim - Delimiter to use when parsing output via regex itself
 const Delim = "|"
 
@@ -123,7 +126,7 @@ func parseSigFile(sigFile string) signFileStruct {
 
 // Execute a command to get the output, error. Command is executed when in the
 // optionally specified 'cmdDir' OR it is executed with the current working dir
-func execCmd(cmdToExec string, verbose bool, cmdDir string) string {
+func execCmd(cmdToExec string, cmdDir string) string {
 	// Get the original working directory
 	owd, _ := os.Getwd()
 
@@ -135,9 +138,7 @@ func execCmd(cmdToExec string, verbose bool, cmdDir string) string {
 	// Get my current working directory
 	cwd, _ := os.Getwd()
 
-	if verbose {
-		log.Printf("[v] Executing cmd: %s in dir: %s\n", cmdToExec, cwd)
-	}
+	log.Printf("[v] Executing cmd: %s in dir: %s\n", cmdToExec, cwd)
 
 	cmd := exec.Command("/bin/bash", "-c", cmdToExec)
 	out, err := cmd.CombinedOutput()
@@ -156,9 +157,16 @@ func execCmd(cmdToExec string, verbose bool, cmdDir string) string {
 	}
 
 	totalOut := (outStr + "\n" + errStr)
-	if verbose {
-		log.Printf("[v] Output of cmd '%s':\n%s\n", cmdToExec, totalOut)
+
+	// Print only specific number of characters
+	partialTotalOut := ""
+	if len(totalOut) > NumOutChars {
+		partialTotalOut = totalOut[:NumOutChars] + " ..."
+	} else {
+		partialTotalOut = totalOut
 	}
+
+	log.Printf("Partial Output of cmd '%s':\n%s \n", cmdToExec, partialTotalOut)
 
 	// Switch back to the original working directory
 	os.Chdir(owd)
@@ -224,158 +232,166 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 	return matcherFound
 }
 
-// Process the command and perform the regex output
-//func parseSigFileContent(signFileStructure signFileStruct) {
-//}
-
 // Worker function parses each YAML signature file, runs relevant commands as
 // present in  each file and performs the matching operation
-func worker(sigFileContent signFileStruct, target map[string]string, verbose bool,
+func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
+	targets chan map[string]string, showTargetsProcessed bool,
 	wg *sync.WaitGroup) {
+
 	// Need to let the waitgroup know that the function is done at the end...
 	defer wg.Done()
 
-	// ID of the signature
-	sigID := sigFileContent.ID
+	// Get each target read from user
+	for target := range targets {
 
-	// First get the list of all checks to perform from file
-	myChecks := sigFileContent.Checks
+		// Check each signature
+		for _, sigFile := range sigFiles {
 
-	for _, myCheck := range myChecks {
-
-		// Get the commmand directory to execute this command in
-		cmdDir := myCheck.CmdDir
-
-		// Store commands output
-
-		// Run all the commands and collect output
-		cmdsOutput := ""
-		requestOutput := ""
-		cmdsToExec := myCheck.Cmd
-		for _, cmdToExec := range cmdsToExec {
-
-			// Run the commands
-			cmdsToExecSub := subTargetParams(cmdToExec, target)
-			cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, verbose,
-				cmdDir)
-
-			// Check for a match from response
-			matcherFound := runMatch(myCheck, cmdsOutput)
-			if matcherFound {
-				fmt.Println(formatDetection(sigID, target))
-			}
-		}
-
-		// Run any web requests on URLs, if provided
-		urls := myCheck.URLs
-
-		for _, urlToCheck := range urls {
-			httpMethod := strings.ToUpper(myCheck.HTTPMethod)
-			if httpMethod == "" {
-				httpMethod = DefHTTPMethod
+			log.Printf("Testing sigfile: %s on target: %+v\n", sigFile, target)
+			if showTargetsProcessed {
+				fmt.Fprintf(os.Stderr, "Testing sigfile: %s on target: %+v\n",
+					sigFile, target)
 			}
 
-			// Build the URL to request + save it
-			urlToCheckSub := subTargetParams(urlToCheck, target)
-			target["fullURLPath"] = urlToCheckSub
+			// Get the signature file content previously opened and read
+			sigFileContent := sigFileContents[sigFile]
 
-			// Build a HTTP request template
-			client := &http.Client{}
-			var body io.Reader
+			// ID of the signature
+			sigID := sigFileContent.ID
 
-			// Prepare the POST body
-			var strBodyParams []string
-			if myCheck.Body != nil {
-				for _, bodySet := range myCheck.Body {
-					name := bodySet.Name
-					value := bodySet.Value
-					strBodyParams = append(strBodyParams, name+"="+value)
-				}
-			}
-			strBody := strings.Join(strBodyParams, "&")
-			body = strings.NewReader(strBody)
+			// First get the list of all checks to perform from file
+			myChecks := sigFileContent.Checks
 
-			// Setup a request template
-			req, _ := http.NewRequest(httpMethod, urlToCheckSub, body)
+			for _, myCheck := range myChecks {
 
-			// Set the user agent string header
-			req.Header.Set("User-Agent", DefUserAgent)
+				// Get the commmand directory to execute this command in
+				cmdDir := myCheck.CmdDir
 
-			// Set custom headers if any are provided
-			if myCheck.Headers != nil {
-				for _, header := range myCheck.Headers {
-					name := header.Name
-					value := header.Value
-					req.Header.Set(name, value)
-				}
-			}
+				// Run all the commands and collect output
+				cmdsOutput := ""
+				requestOutput := ""
+				cmdsToExec := myCheck.Cmd
+				for _, cmdToExec := range cmdsToExec {
 
-			// Verbose message to be printed to let the user know
-			if verbose {
-				log.Printf("Making %s request to URL: %s\n", httpMethod,
-					urlToCheckSub)
-			}
+					// Run the commands
+					cmdsToExecSub := subTargetParams(cmdToExec, target)
+					cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
 
-			// Send the web request
-			resp, _ := client.Do(req)
-
-			if resp != nil {
-
-				// Read the response body
-				respBody, _ := ioutil.ReadAll(resp.Body)
-
-				// Read the response status code as string
-				statusCode := fmt.Sprintf("%d", resp.StatusCode)
-
-				// Read the response headers as string
-				respHeaders := resp.Header
-				respHeadersStr := ""
-				s := ""
-				for k, v := range respHeaders {
-					s = fmt.Sprintf("%s=\"%s\"", k, strings.Join(v, ","))
-					respHeadersStr += s + ";"
+					// Check for a match from response
+					matcherFound := runMatch(myCheck, cmdsOutput)
+					if matcherFound {
+						fmt.Println(formatDetection(sigID, target))
+					}
 				}
 
-				// Combine status code, response headers and body
-				requestOutput = string(statusCode) + "\n" + respHeadersStr + "\n" +
-					string(respBody)
+				// Run any web requests on URLs, if provided
+				urls := myCheck.URLs
 
-				// Verbose message to be printed to let the user know
-				if verbose {
+				for _, urlToCheck := range urls {
+					httpMethod := strings.ToUpper(myCheck.HTTPMethod)
+					if httpMethod == "" {
+						httpMethod = DefHTTPMethod
+					}
+
+					// Build the URL to request + save it
+					urlToCheckSub := subTargetParams(urlToCheck, target)
+					target["fullURLPath"] = urlToCheckSub
+
+					// Build a HTTP request template
+					client := &http.Client{}
+					var body io.Reader
+
+					// Prepare the POST body
+					var strBodyParams []string
+					if myCheck.Body != nil {
+						for _, bodySet := range myCheck.Body {
+							name := bodySet.Name
+							value := bodySet.Value
+							strBodyParams = append(strBodyParams, name+"="+value)
+						}
+					}
+					strBody := strings.Join(strBodyParams, "&")
+					body = strings.NewReader(strBody)
+
+					// Setup a request template
+					req, _ := http.NewRequest(httpMethod, urlToCheckSub, body)
+
+					// Set the user agent string header
+					req.Header.Set("User-Agent", DefUserAgent)
+
+					// Set custom headers if any are provided
+					if myCheck.Headers != nil {
+						for _, header := range myCheck.Headers {
+							name := header.Name
+							value := header.Value
+							req.Header.Set(name, value)
+						}
+					}
+
+					// Verbose message to be printed to let the user know
+
 					log.Printf("Making %s request to URL: %s\n", httpMethod,
 						urlToCheckSub)
+
+					// Send the web request
+					resp, _ := client.Do(req)
+
+					if resp != nil {
+
+						// Read the response body
+						respBody, _ := ioutil.ReadAll(resp.Body)
+
+						// Read the response status code as string
+						statusCode := fmt.Sprintf("%d", resp.StatusCode)
+
+						// Read the response headers as string
+						respHeaders := resp.Header
+						respHeadersStr := ""
+						s := ""
+						for k, v := range respHeaders {
+							s = fmt.Sprintf("%s=\"%s\"", k, strings.Join(v, ","))
+							respHeadersStr += s + ";"
+						}
+
+						// Combine status code, response headers and body
+						requestOutput = string(statusCode) + "\n" + respHeadersStr + "\n" +
+							string(respBody)
+
+						// Verbose message to be printed to let the user know
+						log.Printf("Making %s request to URL: %s\n", httpMethod,
+							urlToCheckSub)
+
+						// Check for a match from the response
+						matcherFound := runMatch(myCheck, requestOutput)
+						if matcherFound {
+							fmt.Println(formatDetection(sigID, target))
+						}
+					}
 				}
 
-				// Check for a match from the response
-				matcherFound := runMatch(myCheck, requestOutput)
-				if matcherFound {
-					fmt.Println(formatDetection(sigID, target))
+				// Are there any special notes? Write them to the output
+				notes := myCheck.Notes
+				if notes != nil {
+					for _, note := range notes {
+						cmdsOutput += "\n[!] " + note
+					}
 				}
-			}
-		}
 
-		// Are there any special notes? Write them to the output
-		notes := myCheck.Notes
-		if notes != nil {
-			for _, note := range notes {
-				cmdsOutput += "\n[!] " + note
-			}
-		}
+				// Check if we need to store output to output file
+				outfile := myCheck.Outfile
+				if outfile != "" {
 
-		// Check if we need to store output to output file
-		outfile := myCheck.Outfile
-		if outfile != "" {
+					// Get the command and web request output together to write to file
+					contentToWrite := cmdsOutput + "\n" + requestOutput
 
-			// Get the command and web request output together to write to file
-			contentToWrite := cmdsOutput + "\n" + requestOutput
+					// Write output to file
+					outfile = subTargetParams(outfile, target)
+					ioutil.WriteFile(outfile, []byte(contentToWrite), 0644)
 
-			// Write output to file
-			outfile = subTargetParams(outfile, target)
-			ioutil.WriteFile(outfile, []byte(contentToWrite), 0644)
+					// Let user know that we wrote results to an output file
+					log.Printf("[*] Wrote results to outfile: %s\n", outfile)
 
-			// Let user know that we wrote results to an output file
-			if verbose {
-				log.Printf("[*] Wrote results to outfile: %s\n", outfile)
+				}
 			}
 		}
 	}
@@ -384,24 +400,39 @@ func worker(sigFileContent signFileStruct, target map[string]string, verbose boo
 
 func main() {
 	pathsWithSigFiles := flag.String("paths", "",
-		"files/folders/file-glob patterns, containing YAML signature files")
-	verbose := flag.Bool("verbose", false, "show commands as executed+output")
-	limit := flag.Uint("limit", 0, "Limit number of host:port targets processed")
+		"Files/folders/file-glob patterns, containing YAML signature files")
+	verbosePtr := flag.Bool("v", false, "Show commands as executed+output")
+	limitPtr := flag.Uint("limit", 0, "Limit number of host:port targets processed")
+	maxThreadsPtr := flag.Int("mt", 20, "Max number of goroutines to launch")
+	showTargetsProcessedPtr := flag.Bool("st", false,
+		"Show targets processed to track progress, as goroutines process targets")
 	flag.Parse()
 
-	if *pathsWithSigFiles == "" {
-		log.Fatalln("[-] Signature files must be provided.")
+	maxThreads := *maxThreadsPtr
+	limit := *limitPtr
+	showTargetsProcessed := *showTargetsProcessedPtr
+
+	// Check if logging should be enabled
+	verbose := *verbosePtr
+	if !verbose {
+		log.SetFlags(0)
+		log.SetOutput(ioutil.Discard)
 	}
 
-	// Convert the comma-sep list of files, folders to loop through
+	if *pathsWithSigFiles == "" {
+		fmt.Println("[-] Signature files must be provided.")
+	}
+
+	log.Println("Convert the comma-sep list of files, folders to loop through")
 	pathsToCheck := strings.Split(*pathsWithSigFiles, ",")
 
 	// List of all files in the folders/files above
 	var filesToParse []string
 
-	// Loop through each path and attempt to discover all files
+	log.Println("Loop through each path to to discover all files")
 	for _, pathToCheck := range pathsToCheck {
 		// Check if glob file-pattern provided
+		log.Printf("Reviewing path: %s\n", pathToCheck)
 		if strings.Index(pathToCheck, "*") >= 0 {
 			matchingPaths, _ := filepath.Glob(pathToCheck)
 			for _, matchingPath := range matchingPaths {
@@ -413,7 +444,7 @@ func main() {
 			//Check if file path exists
 			fi, err := os.Stat(pathToCheck)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "[-] Path: %s not found\n", pathToCheck)
+				log.Fatalf("[-] Path: %s not found\n", pathToCheck)
 			} else {
 				switch mode := fi.Mode(); {
 
@@ -449,18 +480,32 @@ func main() {
 		}
 	}
 
-	// Get all the Yaml files
+	log.Printf("Total number of files: %d\n", len(filesToParse))
+
+	// Get all the Yaml files filtered based on the extension
 	sigFiles := findSigFiles(filesToParse)
+
+	log.Printf("Number of signature  files: %d\n", len(sigFiles))
 
 	// parse information from each signature file and store it so it doesn't
 	// have to be read again & again
 	sigFileContents := make(map[string]signFileStruct, len(sigFiles))
 	for _, sigFile := range sigFiles {
+		log.Printf("Parsing signature file: %s\n", sigFile)
 		sigFileContents[sigFile] = parseSigFile(sigFile)
 	}
 
-	// Prepare a wait group for concurrent processing of files
+	// List of the targets URL/hostname to process
+	targets := make(chan map[string]string)
+
+	// Starting max number of concurrency threads
 	var wg sync.WaitGroup
+	for i := 1; i <= maxThreads; i++ {
+		wg.Add(1)
+
+		log.Printf("Launching goroutine: %d for assessing targets\n", i)
+		go worker(sigFileContents, sigFiles, targets, showTargetsProcessed, &wg)
+	}
 
 	// Count number of targets read
 	var numTargetsRead uint
@@ -586,23 +631,20 @@ func main() {
 				}
 			}
 
+			log.Printf("Adding target for processing: %+v\n", target)
+			targets <- target
+
 			// Limit number of hosts/targets processed
-			if *limit > 0 && numTargetsRead > *limit {
+			if limit > 0 && numTargetsRead > limit {
+				log.Printf("Stopped adding new targets. Limit: %d hits\n", limit)
 				break
-			}
-
-			// Start processing each file concurrently for the given hostname
-			for _, sigFile := range sigFiles {
-				wg.Add(1)
-
-				// Get the signature file content previously opened and read
-				sigFileContent := sigFileContents[sigFile]
-
-				go worker(sigFileContent, target, *verbose, &wg)
 			}
 		}
 	}
 
-	// Wait for all threads to end
+	// Read all targets from user, nothing further to add
+	close(targets)
+
+	// Wait for all threads to finish processing
 	wg.Wait()
 }
