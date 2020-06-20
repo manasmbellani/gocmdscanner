@@ -232,14 +232,12 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 	return matcherFound
 }
 
-// Process the command and perform the regex output
-//func parseSigFileContent(signFileStructure signFileStruct) {
-//}
-
 // Worker function parses each YAML signature file, runs relevant commands as
 // present in  each file and performs the matching operation
 func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
-	targets chan map[string]string, wg *sync.WaitGroup) {
+	targets chan map[string]string, showTargetsProcessed bool,
+	wg *sync.WaitGroup) {
+
 	// Need to let the waitgroup know that the function is done at the end...
 	defer wg.Done()
 
@@ -250,6 +248,10 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 		for _, sigFile := range sigFiles {
 
 			log.Printf("Testing sigfile: %s on target: %+v\n", sigFile, target)
+			if showTargetsProcessed {
+				fmt.Fprintf(os.Stderr, "Testing sigfile: %s on target: %+v\n",
+					sigFile, target)
+			}
 
 			// Get the signature file content previously opened and read
 			sigFileContent := sigFileContents[sigFile]
@@ -402,10 +404,13 @@ func main() {
 	verbosePtr := flag.Bool("v", false, "Show commands as executed+output")
 	limitPtr := flag.Uint("limit", 0, "Limit number of host:port targets processed")
 	maxThreadsPtr := flag.Int("mt", 20, "Max number of goroutines to launch")
+	showTargetsProcessedPtr := flag.Bool("st", false,
+		"Show targets processed to track progress, as goroutines process targets")
 	flag.Parse()
 
 	maxThreads := *maxThreadsPtr
 	limit := *limitPtr
+	showTargetsProcessed := *showTargetsProcessedPtr
 
 	// Check if logging should be enabled
 	verbose := *verbosePtr
@@ -499,7 +504,7 @@ func main() {
 		wg.Add(1)
 
 		log.Printf("Launching goroutine: %d for assessing targets\n", i)
-		go worker(sigFileContents, sigFiles, targets, &wg)
+		go worker(sigFileContents, sigFiles, targets, showTargetsProcessed, &wg)
 	}
 
 	// Count number of targets read
