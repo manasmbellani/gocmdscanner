@@ -238,148 +238,159 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 
 // Worker function parses each YAML signature file, runs relevant commands as
 // present in  each file and performs the matching operation
-func worker(sigFileContent signFileStruct, target map[string]string,
-	wg *sync.WaitGroup) {
+func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
+	targets chan map[string]string, wg *sync.WaitGroup) {
 	// Need to let the waitgroup know that the function is done at the end...
 	defer wg.Done()
 
-	// ID of the signature
-	sigID := sigFileContent.ID
+	// Get each target read from user
+	for target := range targets {
 
-	// First get the list of all checks to perform from file
-	myChecks := sigFileContent.Checks
+		// Check each signature
+		for _, sigFile := range sigFiles {
 
-	for _, myCheck := range myChecks {
+			log.Printf("Testing sigfile: %s on target: %+v\n", sigFile, target)
 
-		// Get the commmand directory to execute this command in
-		cmdDir := myCheck.CmdDir
+			// Get the signature file content previously opened and read
+			sigFileContent := sigFileContents[sigFile]
 
-		// Store commands output
+			// ID of the signature
+			sigID := sigFileContent.ID
 
-		// Run all the commands and collect output
-		cmdsOutput := ""
-		requestOutput := ""
-		cmdsToExec := myCheck.Cmd
-		for _, cmdToExec := range cmdsToExec {
+			// First get the list of all checks to perform from file
+			myChecks := sigFileContent.Checks
 
-			// Run the commands
-			cmdsToExecSub := subTargetParams(cmdToExec, target)
-			cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
+			for _, myCheck := range myChecks {
 
-			// Check for a match from response
-			matcherFound := runMatch(myCheck, cmdsOutput)
-			if matcherFound {
-				fmt.Println(formatDetection(sigID, target))
-			}
-		}
+				// Get the commmand directory to execute this command in
+				cmdDir := myCheck.CmdDir
 
-		// Run any web requests on URLs, if provided
-		urls := myCheck.URLs
+				// Run all the commands and collect output
+				cmdsOutput := ""
+				requestOutput := ""
+				cmdsToExec := myCheck.Cmd
+				for _, cmdToExec := range cmdsToExec {
 
-		for _, urlToCheck := range urls {
-			httpMethod := strings.ToUpper(myCheck.HTTPMethod)
-			if httpMethod == "" {
-				httpMethod = DefHTTPMethod
-			}
+					// Run the commands
+					cmdsToExecSub := subTargetParams(cmdToExec, target)
+					cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
 
-			// Build the URL to request + save it
-			urlToCheckSub := subTargetParams(urlToCheck, target)
-			target["fullURLPath"] = urlToCheckSub
-
-			// Build a HTTP request template
-			client := &http.Client{}
-			var body io.Reader
-
-			// Prepare the POST body
-			var strBodyParams []string
-			if myCheck.Body != nil {
-				for _, bodySet := range myCheck.Body {
-					name := bodySet.Name
-					value := bodySet.Value
-					strBodyParams = append(strBodyParams, name+"="+value)
-				}
-			}
-			strBody := strings.Join(strBodyParams, "&")
-			body = strings.NewReader(strBody)
-
-			// Setup a request template
-			req, _ := http.NewRequest(httpMethod, urlToCheckSub, body)
-
-			// Set the user agent string header
-			req.Header.Set("User-Agent", DefUserAgent)
-
-			// Set custom headers if any are provided
-			if myCheck.Headers != nil {
-				for _, header := range myCheck.Headers {
-					name := header.Name
-					value := header.Value
-					req.Header.Set(name, value)
-				}
-			}
-
-			// Verbose message to be printed to let the user know
-
-			log.Printf("Making %s request to URL: %s\n", httpMethod,
-				urlToCheckSub)
-
-			// Send the web request
-			resp, _ := client.Do(req)
-
-			if resp != nil {
-
-				// Read the response body
-				respBody, _ := ioutil.ReadAll(resp.Body)
-
-				// Read the response status code as string
-				statusCode := fmt.Sprintf("%d", resp.StatusCode)
-
-				// Read the response headers as string
-				respHeaders := resp.Header
-				respHeadersStr := ""
-				s := ""
-				for k, v := range respHeaders {
-					s = fmt.Sprintf("%s=\"%s\"", k, strings.Join(v, ","))
-					respHeadersStr += s + ";"
+					// Check for a match from response
+					matcherFound := runMatch(myCheck, cmdsOutput)
+					if matcherFound {
+						fmt.Println(formatDetection(sigID, target))
+					}
 				}
 
-				// Combine status code, response headers and body
-				requestOutput = string(statusCode) + "\n" + respHeadersStr + "\n" +
-					string(respBody)
+				// Run any web requests on URLs, if provided
+				urls := myCheck.URLs
 
-				// Verbose message to be printed to let the user know
-				log.Printf("Making %s request to URL: %s\n", httpMethod,
-					urlToCheckSub)
+				for _, urlToCheck := range urls {
+					httpMethod := strings.ToUpper(myCheck.HTTPMethod)
+					if httpMethod == "" {
+						httpMethod = DefHTTPMethod
+					}
 
-				// Check for a match from the response
-				matcherFound := runMatch(myCheck, requestOutput)
-				if matcherFound {
-					fmt.Println(formatDetection(sigID, target))
+					// Build the URL to request + save it
+					urlToCheckSub := subTargetParams(urlToCheck, target)
+					target["fullURLPath"] = urlToCheckSub
+
+					// Build a HTTP request template
+					client := &http.Client{}
+					var body io.Reader
+
+					// Prepare the POST body
+					var strBodyParams []string
+					if myCheck.Body != nil {
+						for _, bodySet := range myCheck.Body {
+							name := bodySet.Name
+							value := bodySet.Value
+							strBodyParams = append(strBodyParams, name+"="+value)
+						}
+					}
+					strBody := strings.Join(strBodyParams, "&")
+					body = strings.NewReader(strBody)
+
+					// Setup a request template
+					req, _ := http.NewRequest(httpMethod, urlToCheckSub, body)
+
+					// Set the user agent string header
+					req.Header.Set("User-Agent", DefUserAgent)
+
+					// Set custom headers if any are provided
+					if myCheck.Headers != nil {
+						for _, header := range myCheck.Headers {
+							name := header.Name
+							value := header.Value
+							req.Header.Set(name, value)
+						}
+					}
+
+					// Verbose message to be printed to let the user know
+
+					log.Printf("Making %s request to URL: %s\n", httpMethod,
+						urlToCheckSub)
+
+					// Send the web request
+					resp, _ := client.Do(req)
+
+					if resp != nil {
+
+						// Read the response body
+						respBody, _ := ioutil.ReadAll(resp.Body)
+
+						// Read the response status code as string
+						statusCode := fmt.Sprintf("%d", resp.StatusCode)
+
+						// Read the response headers as string
+						respHeaders := resp.Header
+						respHeadersStr := ""
+						s := ""
+						for k, v := range respHeaders {
+							s = fmt.Sprintf("%s=\"%s\"", k, strings.Join(v, ","))
+							respHeadersStr += s + ";"
+						}
+
+						// Combine status code, response headers and body
+						requestOutput = string(statusCode) + "\n" + respHeadersStr + "\n" +
+							string(respBody)
+
+						// Verbose message to be printed to let the user know
+						log.Printf("Making %s request to URL: %s\n", httpMethod,
+							urlToCheckSub)
+
+						// Check for a match from the response
+						matcherFound := runMatch(myCheck, requestOutput)
+						if matcherFound {
+							fmt.Println(formatDetection(sigID, target))
+						}
+					}
+				}
+
+				// Are there any special notes? Write them to the output
+				notes := myCheck.Notes
+				if notes != nil {
+					for _, note := range notes {
+						cmdsOutput += "\n[!] " + note
+					}
+				}
+
+				// Check if we need to store output to output file
+				outfile := myCheck.Outfile
+				if outfile != "" {
+
+					// Get the command and web request output together to write to file
+					contentToWrite := cmdsOutput + "\n" + requestOutput
+
+					// Write output to file
+					outfile = subTargetParams(outfile, target)
+					ioutil.WriteFile(outfile, []byte(contentToWrite), 0644)
+
+					// Let user know that we wrote results to an output file
+					log.Printf("[*] Wrote results to outfile: %s\n", outfile)
+
 				}
 			}
-		}
-
-		// Are there any special notes? Write them to the output
-		notes := myCheck.Notes
-		if notes != nil {
-			for _, note := range notes {
-				cmdsOutput += "\n[!] " + note
-			}
-		}
-
-		// Check if we need to store output to output file
-		outfile := myCheck.Outfile
-		if outfile != "" {
-
-			// Get the command and web request output together to write to file
-			contentToWrite := cmdsOutput + "\n" + requestOutput
-
-			// Write output to file
-			outfile = subTargetParams(outfile, target)
-			ioutil.WriteFile(outfile, []byte(contentToWrite), 0644)
-
-			// Let user know that we wrote results to an output file
-			log.Printf("[*] Wrote results to outfile: %s\n", outfile)
-
 		}
 	}
 	//log.Printf("Completed check on path: %s\n", target["basepath"])
@@ -389,10 +400,12 @@ func main() {
 	pathsWithSigFiles := flag.String("paths", "",
 		"Files/folders/file-glob patterns, containing YAML signature files")
 	verbosePtr := flag.Bool("v", false, "Show commands as executed+output")
-	limit := flag.Uint("limit", 0, "Limit number of host:port targets processed")
-	//maxThreadsPtr := flag.Uint("mt", 20,
-	//	"Max number of threads/goroutines to launch")
+	limitPtr := flag.Uint("limit", 0, "Limit number of host:port targets processed")
+	maxThreadsPtr := flag.Int("mt", 20, "Max number of goroutines to launch")
 	flag.Parse()
+
+	maxThreads := *maxThreadsPtr
+	limit := *limitPtr
 
 	// Check if logging should be enabled
 	verbose := *verbosePtr
@@ -400,8 +413,6 @@ func main() {
 		log.SetFlags(0)
 		log.SetOutput(ioutil.Discard)
 	}
-
-	//maxThreads := *maxThreadsPtr
 
 	if *pathsWithSigFiles == "" {
 		fmt.Println("[-] Signature files must be provided.")
@@ -479,13 +490,20 @@ func main() {
 		sigFileContents[sigFile] = parseSigFile(sigFile)
 	}
 
-	// Prepare a wait group for concurrent processing of files
+	// List of the targets URL/hostname to process
+	targets := make(chan map[string]string)
+
+	// Starting max number of concurrency threads
 	var wg sync.WaitGroup
+	for i := 1; i <= maxThreads; i++ {
+		wg.Add(1)
+
+		log.Printf("Launching goroutine: %d for assessing targets\n", i)
+		go worker(sigFileContents, sigFiles, targets, &wg)
+	}
 
 	// Count number of targets read
 	var numTargetsRead uint
-
-	//targets := m
 
 	// Read each target info line by line
 	scanner := bufio.NewScanner(os.Stdin)
@@ -608,27 +626,20 @@ func main() {
 				}
 			}
 
-			log.Printf("Processing target: %+v\n", target)
+			log.Printf("Adding target for processing: %+v\n", target)
+			targets <- target
 
 			// Limit number of hosts/targets processed
-			if *limit > 0 && numTargetsRead > *limit {
+			if limit > 0 && numTargetsRead > limit {
+				log.Printf("Stopped adding new targets. Limit: %d hits\n", limit)
 				break
-			}
-
-			// Start processing each file concurrently for the given hostname
-			for _, sigFile := range sigFiles {
-				wg.Add(1)
-
-				log.Printf("Test sigfile: %s on target: %+v\n", sigFile, target)
-
-				// Get the signature file content previously opened and read
-				sigFileContent := sigFileContents[sigFile]
-
-				go worker(sigFileContent, target, &wg)
 			}
 		}
 	}
 
-	// Wait for all threads to end
+	// Read all targets from user, nothing further to add
+	close(targets)
+
+	// Wait for all threads to finish processing
 	wg.Wait()
 }
