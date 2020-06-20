@@ -384,24 +384,36 @@ func worker(sigFileContent signFileStruct, target map[string]string, verbose boo
 
 func main() {
 	pathsWithSigFiles := flag.String("paths", "",
-		"files/folders/file-glob patterns, containing YAML signature files")
-	verbose := flag.Bool("verbose", false, "show commands as executed+output")
+		"Files/folders/file-glob patterns, containing YAML signature files")
+	verbosePtr := flag.Bool("v", false, "Show commands as executed+output")
 	limit := flag.Uint("limit", 0, "Limit number of host:port targets processed")
+	//maxThreadsPtr := flag.Uint("mt", 20,
+	//	"Max number of threads/goroutines to launch")
 	flag.Parse()
 
-	if *pathsWithSigFiles == "" {
-		log.Fatalln("[-] Signature files must be provided.")
+	// Check if logging should be enabled
+	verbose := *verbosePtr
+	if !verbose {
+		log.SetFlags(0)
+		log.SetOutput(ioutil.Discard)
 	}
 
-	// Convert the comma-sep list of files, folders to loop through
+	//maxThreads := *maxThreadsPtr
+
+	if *pathsWithSigFiles == "" {
+		fmt.Println("[-] Signature files must be provided.")
+	}
+
+	log.Println("Convert the comma-sep list of files, folders to loop through")
 	pathsToCheck := strings.Split(*pathsWithSigFiles, ",")
 
 	// List of all files in the folders/files above
 	var filesToParse []string
 
-	// Loop through each path and attempt to discover all files
+	log.Println("Loop through each path to to discover all files")
 	for _, pathToCheck := range pathsToCheck {
 		// Check if glob file-pattern provided
+		log.Printf("Reviewing path: %s\n", pathToCheck)
 		if strings.Index(pathToCheck, "*") >= 0 {
 			matchingPaths, _ := filepath.Glob(pathToCheck)
 			for _, matchingPath := range matchingPaths {
@@ -413,7 +425,7 @@ func main() {
 			//Check if file path exists
 			fi, err := os.Stat(pathToCheck)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "[-] Path: %s not found\n", pathToCheck)
+				log.Fatalf("[-] Path: %s not found\n", pathToCheck)
 			} else {
 				switch mode := fi.Mode(); {
 
@@ -449,13 +461,18 @@ func main() {
 		}
 	}
 
-	// Get all the Yaml files
+	log.Printf("Total number of files: %d\n", len(filesToParse))
+
+	// Get all the Yaml files filtered based on the extension
 	sigFiles := findSigFiles(filesToParse)
+
+	log.Printf("Number of signature  files: %d\n", len(sigFiles))
 
 	// parse information from each signature file and store it so it doesn't
 	// have to be read again & again
 	sigFileContents := make(map[string]signFileStruct, len(sigFiles))
 	for _, sigFile := range sigFiles {
+		log.Printf("Parsing signature file: %s\n", sigFile)
 		sigFileContents[sigFile] = parseSigFile(sigFile)
 	}
 
@@ -464,6 +481,8 @@ func main() {
 
 	// Count number of targets read
 	var numTargetsRead uint
+
+	//targets := m
 
 	// Read each target info line by line
 	scanner := bufio.NewScanner(os.Stdin)
@@ -586,6 +605,8 @@ func main() {
 				}
 			}
 
+			log.Printf("Processing target: %+v\n", target)
+
 			// Limit number of hosts/targets processed
 			if *limit > 0 && numTargetsRead > *limit {
 				break
@@ -595,10 +616,12 @@ func main() {
 			for _, sigFile := range sigFiles {
 				wg.Add(1)
 
+				log.Printf("Test sigfile: %s on target: %+v\n", sigFile, target)
+
 				// Get the signature file content previously opened and read
 				sigFileContent := sigFileContents[sigFile]
 
-				go worker(sigFileContent, target, *verbose, &wg)
+				go worker(sigFileContent, target, verbose, &wg)
 			}
 		}
 	}
