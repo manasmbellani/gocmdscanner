@@ -4,6 +4,7 @@ package main
 //signature and run the scan
 import (
 	"bufio"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io"
@@ -506,6 +507,9 @@ func main() {
 		log.Printf("Launching goroutine: %d for assessing targets\n", i)
 		go worker(sigFileContents, sigFiles, targets, showTargetsProcessed, &wg)
 	}
+
+	log.Println("Disabling SSL Certificate checks for http client")
+	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 
 	// Count number of targets read
 	var numTargetsRead uint
