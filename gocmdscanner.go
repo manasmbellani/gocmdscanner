@@ -379,6 +379,16 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 					cmdsOutput += "\n[!] " + notes
 				}
 
+				// If verbose mode is set, then print commands output and the
+				// requests output - useful for debugging
+				if cmdsOutput != "" {
+					log.Printf(cmdsOutput)
+				}
+
+				if requestOutput != "" {
+					log.Printf(requestOutput)
+				}
+
 				// Check if we need to store output to output file
 				outfile := myCheck.Outfile
 				if outfile != "" {
