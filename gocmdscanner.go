@@ -70,8 +70,8 @@ type sigCheck struct {
 		Name  string `yaml:"name"`
 		Value string `yaml:"value"`
 	} `yaml:"headers"`
-	Notes    []string `yaml:"notes"`
-	Outfile  string   `yaml:"outfile"`
+	Notes    string `yaml:"notes"`
+	Outfile  string `yaml:"outfile"`
 	Matchers []struct {
 		Type  string `yaml:"type"`
 		Regex string `yaml:"regex"`
@@ -119,7 +119,10 @@ func parseSigFile(sigFile string) signFileStruct {
 	}
 	err = yaml.Unmarshal(yamlFile, &sigFileContent)
 	if err != nil {
-		log.Fatalf("Unmarshal: %v", err)
+		fmt.Printf("[-] Unmarshal YAML Parsing Error: %+v in file: %s\n", err,
+			sigFile)
+		log.Fatalf("[-] Unmarshal YAML Parsing Error: %+v in file: %s\n", err,
+			sigFile)
 	}
 
 	return sigFileContent
@@ -372,10 +375,8 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 
 				// Are there any special notes? Write them to the output
 				notes := myCheck.Notes
-				if notes != nil {
-					for _, note := range notes {
-						cmdsOutput += "\n[!] " + note
-					}
+				if notes != "" {
+					cmdsOutput += "\n[!] " + notes
 				}
 
 				// Check if we need to store output to output file
