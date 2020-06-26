@@ -199,7 +199,7 @@ func formatDetection(sigID string, target map[string]string) string {
 		fullURLPath, fullURLPathFound := target["fullURLPath"]
 
 		if fullURLPathFound {
-			pathToPrint = fullURLPath
+			pathToPrint = "[" + sigID + "] " + fullURLPath
 		} else {
 			pathToPrint = "[" + sigID + "] " + target["protocol"] + "://" + target["hostname"] + ":" +
 				target["port"]
@@ -251,9 +251,9 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 		// Check each signature
 		for _, sigFile := range sigFiles {
 
-			log.Printf("Testing sigfile: %s on target: %+v\n", sigFile, target)
+			log.Printf("[*] Testing sigfile: %s on target: %+v\n", sigFile, target)
 			if showTargetsProcessed {
-				fmt.Fprintf(os.Stderr, "Testing sigfile: %s on target: %+v\n",
+				fmt.Fprintf(os.Stderr, "[*] Testing sigfile: %s on target: %+v\n",
 					sigFile, target)
 			}
 
