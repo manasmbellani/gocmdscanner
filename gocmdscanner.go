@@ -633,6 +633,9 @@ func main() {
 				}
 			}
 
+			// Add the current working directory
+			target["owd"], _ = os.Getwd()
+
 			// Define a base path on which to run the scan/make request
 			target["basepath"] = target["protocol"] + "://" + target["hostname"] +
 				":" + target["port"]
