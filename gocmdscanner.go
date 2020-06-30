@@ -217,7 +217,7 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 	matchers := checkConfig.Matchers
 	for _, matcher := range matchers {
 		matcherType := matcher.Type
-		if strings.ToLower(matcherType) == "regex" {
+		if matcherType == "" || strings.ToLower(matcherType) == "regex" {
 			strToSearch := strings.ReplaceAll(outputToSearch, "\n", Delim)
 			strToSearch = strings.ReplaceAll(strToSearch, "\r", Delim)
 			regex := matcher.Regex
