@@ -353,7 +353,7 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 						respHeadersStr := ""
 						s := ""
 						for k, v := range respHeaders {
-							s = fmt.Sprintf("%s:\"%s\"", k, strings.Join(v, ","))
+							s = fmt.Sprintf("%s:%s", k, strings.Join(v, ","))
 							respHeadersStr += s + ";"
 						}
 
