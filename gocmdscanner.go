@@ -73,8 +73,9 @@ type sigCheck struct {
 	Notes    string `yaml:"notes"`
 	Outfile  string `yaml:"outfile"`
 	Matchers []struct {
-		Type  string `yaml:"type"`
-		Regex string `yaml:"regex"`
+		Type    string `yaml:"type"`
+		Regex   string `yaml:"regex"`
+		NoRegex string `yaml:"noregex"`
 	} `yaml:"matchers"`
 }
 
@@ -212,6 +213,7 @@ func formatDetection(sigID string, target map[string]string) string {
 // Get given match config and search output for keywords. If found, then
 func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 	matcherFound := false
+	noRegexMatcherFound := false
 
 	// Determine what type of matcher was provided
 	matchers := checkConfig.Matchers
@@ -220,14 +222,31 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 		if matcherType == "" || strings.ToLower(matcherType) == "regex" {
 			strToSearch := strings.ReplaceAll(outputToSearch, "\n", Delim)
 			strToSearch = strings.ReplaceAll(strToSearch, "\r", Delim)
-			regex := matcher.Regex
-			found, err := regexp.MatchString(regex, strToSearch)
-			if err != nil {
-				log.Fatalf("[-] Regex Error: %s\n", err.Error())
+
+			// First check if there is regex that should not be present
+			noRegex := matcher.NoRegex
+			if noRegex != "" {
+				found, err := regexp.MatchString(noRegex, strToSearch)
+				if err != nil {
+					log.Fatalf("[-] Regex Error when running NoRegex search: %s\n", err.Error())
+				}
+				if found {
+					matcherFound = false
+					noRegexMatcherFound = true
+				}
 			}
-			if found == true {
-				matcherFound = true
-				break
+
+			// Then search for positive regex
+			regex := matcher.Regex
+			if !noRegexMatcherFound {
+				found, err := regexp.MatchString(regex, strToSearch)
+				if err != nil {
+					log.Fatalf("[-] Regex Error when running Regex search: %s\n", err.Error())
+				}
+				if found {
+					matcherFound = true
+					break
+				}
 			}
 		} else {
 			log.Fatalf("[-] Unknown matcher type: %s\n", matcherType)
