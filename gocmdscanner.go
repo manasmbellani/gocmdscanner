@@ -296,9 +296,11 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 				cmdsToExec := myCheck.Cmd
 				for _, cmdToExec := range cmdsToExec {
 
-					// Run the commands
-					cmdsToExecSub := subTargetParams(cmdToExec, target)
-					cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
+					// Run the commands, if not empty
+					if cmdToExec != "" {
+						cmdsToExecSub := subTargetParams(cmdToExec, target)
+						cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
+					}
 
 					// Check for a match from response
 					matcherFound := runMatch(myCheck, cmdsOutput)
