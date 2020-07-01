@@ -397,7 +397,7 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 				// Are there any special notes? Write them to the output
 				notes := myCheck.Notes
 				if notes != "" {
-					cmdsOutput += "\n[!] " + notes
+					cmdsOutput += "\n[!] " + subTargetParams(notes, target)
 				}
 
 				// If verbose mode is set, then print commands output and the
