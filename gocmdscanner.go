@@ -58,6 +58,7 @@ type signFileStruct struct {
 
 // Define a separate struct for checks
 type sigCheck struct {
+	Cmethod    string   `yaml:"cmethod"`
 	Cmd        []string `yaml:"cmd"`
 	CmdDir     string   `yaml:"cmddir"`
 	URLs       []string `yaml:"url"`
@@ -258,7 +259,7 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 // Worker function parses each YAML signature file, runs relevant commands as
 // present in  each file and performs the matching operation
 func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
-	targets chan map[string]string, showTargetsProcessed bool,
+	targets chan map[string]string, showTargetsProcessed bool, methodToExec string,
 	wg *sync.WaitGroup) {
 
 	// Need to let the waitgroup know that the function is done at the end...
@@ -287,143 +288,149 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 
 			for _, myCheck := range myChecks {
 
-				// Get the commmand directory to execute this command in
-				cmdDir := myCheck.CmdDir
+				// get the method related to the check
+				cmethod := myCheck.Cmethod
 
-				// Run all the commands and collect output
-				cmdsOutput := ""
-				requestOutput := ""
-				cmdsToExec := myCheck.Cmd
-				for _, cmdToExec := range cmdsToExec {
+				// Determine if we should execute the method OR not
+				if methodToExec == "all" || cmethod == methodToExec {
 
-					// Run the commands, if not empty
-					if cmdToExec != "" {
-						cmdsToExecSub := subTargetParams(cmdToExec, target)
-						cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
-					}
+					// Get the commmand directory to execute this command in
+					cmdDir := myCheck.CmdDir
 
-					// Check for a match from response
-					matcherFound := runMatch(myCheck, cmdsOutput)
-					if matcherFound {
-						fmt.Println(formatDetection(sigID, target))
-					}
-				}
+					// Run all the commands and collect output
+					cmdsOutput := ""
+					requestOutput := ""
+					cmdsToExec := myCheck.Cmd
+					for _, cmdToExec := range cmdsToExec {
 
-				// Run any web requests on URLs, if provided
-				urls := myCheck.URLs
-
-				for _, urlToCheck := range urls {
-					httpMethod := strings.ToUpper(myCheck.HTTPMethod)
-					if httpMethod == "" {
-						httpMethod = DefHTTPMethod
-					}
-
-					// Build the URL to request + save it
-					urlToCheckSub := subTargetParams(urlToCheck, target)
-					target["fullURLPath"] = urlToCheckSub
-
-					// Build a HTTP request template
-					client := &http.Client{}
-					var body io.Reader
-
-					// Prepare the POST body
-					var strBodyParams []string
-					if myCheck.Body != nil {
-						for _, bodySet := range myCheck.Body {
-							name := bodySet.Name
-							value := bodySet.Value
-							strBodyParams = append(strBodyParams, name+"="+value)
-						}
-					}
-					strBody := strings.Join(strBodyParams, "&")
-					body = strings.NewReader(strBody)
-
-					// Setup a request template
-					req, _ := http.NewRequest(httpMethod, urlToCheckSub, body)
-
-					// Set the user agent string header
-					req.Header.Set("User-Agent", DefUserAgent)
-
-					// Set custom headers if any are provided
-					if myCheck.Headers != nil {
-						for _, header := range myCheck.Headers {
-							name := header.Name
-							value := header.Value
-							req.Header.Set(name, value)
-						}
-					}
-
-					// Verbose message to be printed to let the user know
-
-					log.Printf("Making %s request to URL: %s\n", httpMethod,
-						urlToCheckSub)
-
-					// Send the web request
-					resp, _ := client.Do(req)
-
-					if resp != nil {
-
-						// Read the response body
-						respBody, _ := ioutil.ReadAll(resp.Body)
-
-						// Read the response status code as string
-						statusCode := fmt.Sprintf("%d", resp.StatusCode)
-
-						// Read the response headers as string
-						respHeaders := resp.Header
-						respHeadersStr := ""
-						s := ""
-						for k, v := range respHeaders {
-							s = fmt.Sprintf("%s:%s", k, strings.Join(v, ","))
-							respHeadersStr += s + ";"
+						// Run the commands, if not empty
+						if cmdToExec != "" {
+							cmdsToExecSub := subTargetParams(cmdToExec, target)
+							cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
 						}
 
-						// Combine status code, response headers and body
-						requestOutput = string(statusCode) + "\n" + respHeadersStr + "\n" +
-							string(respBody)
-
-						// Verbose message to be printed to let the user know
-						log.Printf("Making %s request to URL: %s\n", httpMethod,
-							urlToCheckSub)
-
-						// Check for a match from the response
-						matcherFound := runMatch(myCheck, requestOutput)
+						// Check for a match from response
+						matcherFound := runMatch(myCheck, cmdsOutput)
 						if matcherFound {
 							fmt.Println(formatDetection(sigID, target))
 						}
 					}
-				}
 
-				// Are there any special notes? Write them to the output
-				notes := myCheck.Notes
-				if notes != "" {
-					cmdsOutput += "\n[!] " + subTargetParams(notes, target)
-				}
+					// Run any web requests on URLs, if provided
+					urls := myCheck.URLs
 
-				// If verbose mode is set, then print commands output and the
-				// requests output - useful for debugging
-				if cmdsOutput != "" {
-					log.Printf(cmdsOutput)
-				}
+					for _, urlToCheck := range urls {
+						httpMethod := strings.ToUpper(myCheck.HTTPMethod)
+						if httpMethod == "" {
+							httpMethod = DefHTTPMethod
+						}
 
-				if requestOutput != "" {
-					log.Printf(requestOutput)
-				}
+						// Build the URL to request + save it
+						urlToCheckSub := subTargetParams(urlToCheck, target)
+						target["fullURLPath"] = urlToCheckSub
 
-				// Check if we need to store output to output file
-				outfile := myCheck.Outfile
-				if outfile != "" {
+						// Build a HTTP request template
+						client := &http.Client{}
+						var body io.Reader
 
-					// Get the command and web request output together to write to file
-					contentToWrite := cmdsOutput + "\n" + requestOutput
+						// Prepare the POST body
+						var strBodyParams []string
+						if myCheck.Body != nil {
+							for _, bodySet := range myCheck.Body {
+								name := bodySet.Name
+								value := bodySet.Value
+								strBodyParams = append(strBodyParams, name+"="+value)
+							}
+						}
+						strBody := strings.Join(strBodyParams, "&")
+						body = strings.NewReader(strBody)
 
-					// Write output to file
-					outfile = subTargetParams(outfile, target)
-					ioutil.WriteFile(outfile, []byte(contentToWrite), 0644)
+						// Setup a request template
+						req, _ := http.NewRequest(httpMethod, urlToCheckSub, body)
 
-					// Let user know that we wrote results to an output file
-					log.Printf("[*] Wrote results to outfile: %s\n", outfile)
+						// Set the user agent string header
+						req.Header.Set("User-Agent", DefUserAgent)
 
+						// Set custom headers if any are provided
+						if myCheck.Headers != nil {
+							for _, header := range myCheck.Headers {
+								name := header.Name
+								value := header.Value
+								req.Header.Set(name, value)
+							}
+						}
+
+						// Verbose message to be printed to let the user know
+
+						log.Printf("Make %s request to URL: %s\n", httpMethod,
+							urlToCheckSub)
+
+						// Send the web request
+						resp, _ := client.Do(req)
+
+						if resp != nil {
+
+							// Read the response body
+							respBody, _ := ioutil.ReadAll(resp.Body)
+
+							// Read the response status code as string
+							statusCode := fmt.Sprintf("%d", resp.StatusCode)
+
+							// Read the response headers as string
+							respHeaders := resp.Header
+							respHeadersStr := ""
+							s := ""
+							for k, v := range respHeaders {
+								s = fmt.Sprintf("%s:%s", k, strings.Join(v, ","))
+								respHeadersStr += s + ";"
+							}
+
+							// Combine status code, response headers and body
+							requestOutput = string(statusCode) + "\n" + respHeadersStr + "\n" +
+								string(respBody)
+
+							// Verbose message to be printed to let the user know
+							log.Printf("Making %s request to URL: %s\n", httpMethod,
+								urlToCheckSub)
+
+							// Check for a match from the response
+							matcherFound := runMatch(myCheck, requestOutput)
+							if matcherFound {
+								fmt.Println(formatDetection(sigID, target))
+							}
+						}
+					}
+
+					// Are there any special notes? Write them to the output
+					notes := myCheck.Notes
+					if notes != "" {
+						cmdsOutput += "\n[!] " + subTargetParams(notes, target)
+					}
+
+					// If verbose mode is set, then print commands output and the
+					// requests output - useful for debugging
+					if cmdsOutput != "" {
+						log.Printf(cmdsOutput)
+					}
+
+					if requestOutput != "" {
+						log.Printf(requestOutput)
+					}
+
+					// Check if we need to store output to output file
+					outfile := myCheck.Outfile
+					if outfile != "" {
+
+						// Get the command and web request output together to write to file
+						contentToWrite := cmdsOutput + "\n" + requestOutput
+
+						// Write output to file
+						outfile = subTargetParams(outfile, target)
+						ioutil.WriteFile(outfile, []byte(contentToWrite), 0644)
+
+						// Let user know that we wrote results to an output file
+						log.Printf("[*] Wrote results to outfile: %s\n", outfile)
+					}
 				}
 			}
 		}
@@ -439,11 +446,13 @@ func main() {
 	maxThreadsPtr := flag.Int("mt", 20, "Max number of goroutines to launch")
 	showTargetsProcessedPtr := flag.Bool("st", false,
 		"Show targets processed to track progress, as goroutines process targets")
+	methodToExecPtr := flag.String("cm", "all", "Methods of signature file to exec")
 	flag.Parse()
 
 	maxThreads := *maxThreadsPtr
 	limit := *limitPtr
 	showTargetsProcessed := *showTargetsProcessedPtr
+	methodToExec := *methodToExecPtr
 
 	// Check if logging should be enabled
 	verbose := *verbosePtr
@@ -537,7 +546,8 @@ func main() {
 		wg.Add(1)
 
 		log.Printf("Launching goroutine: %d for assessing targets\n", i)
-		go worker(sigFileContents, sigFiles, targets, showTargetsProcessed, &wg)
+		go worker(sigFileContents, sigFiles, targets, showTargetsProcessed,
+			methodToExec, &wg)
 	}
 
 	log.Println("Disabling SSL Certificate checks for http client")

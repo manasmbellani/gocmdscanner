@@ -25,7 +25,8 @@ info:
     severity: high
 
 checks:
-    - cmd:
+    - cmethod: nmap
+      cmd:
       -  "nmap -sS -Pn --script=smb-protocols -p{port} {hostname}"
       outfile: "/tmp/out-smb-ghostcheck-cve-2020-0796-{hostname}-{port}.txt"
       matchers:
@@ -45,16 +46,18 @@ smb://125.231.106.110:445
 
 Run the check on all targets via the command using 10 goroutines ("light-threads") for concurrency, use `-mt`: 
 ```
-cat /tmp/targets.txt | go run cmdscanner.go -paths smb_smbghost_check.yaml cat -mt 10
+$ cat /tmp/targets.txt | go run cmdscanner.go -paths smb_smbghost_check.yaml cat -mt 10
 ```
 
 To show the targets that are being processed, use `-st` command to write progress to STDERR location, and write discovered assets to `out.txt`:
 ```
-cat /tmp/targets.txt | go run cmdscanner.go -paths smb_smbghost_check.yaml cat -st | tee out.txt
+$ cat /tmp/targets.txt | go run cmdscanner.go -paths smb_smbghost_check.yaml cat -st | tee out.txt
 Testing sigfile: smb_smbghost_check on target: map[basepath:https://www.google.com]
 ...
 
 ```
+
+It is possible to optionally specify multiple methods of running a check using `cmethod` param in the signature file, as shown above. By then, specifying `-cm` to `gocmdscanner`, it is possible to determine which checks to perform from signature files.
 
 ### URL Usage
 `GoCmdScanner` can also be used for making HTTP requests and check response received, similar to how nuclei works.
