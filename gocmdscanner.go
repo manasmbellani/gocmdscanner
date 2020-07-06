@@ -28,10 +28,10 @@ const NumOutChars = 1000
 const Delim = "|"
 
 // DefProtocol - default protocol to use if not specified
-const DefProtocol = "http"
+const DefProtocol = "https"
 
 // DefPort - Default port to use if not specified
-const DefPort = "80"
+const DefPort = "443"
 
 // DefRegion - Default AWS region
 const DefRegion = "ap-southeast-2"
