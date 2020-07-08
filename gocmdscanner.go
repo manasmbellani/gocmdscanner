@@ -256,6 +256,12 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 	return matcherFound
 }
 
+// Get file name without extension only
+func fileNameWOExt(filePath string) string {
+	fileName := filepath.Base(filePath)
+	return strings.TrimSuffix(fileName, filepath.Ext(fileName))
+}
+
 // Worker function parses each YAML signature file, runs relevant commands as
 // present in  each file and performs the matching operation
 func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
@@ -282,6 +288,10 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 
 			// ID of the signature
 			sigID := sigFileContent.ID
+			if sigID == "" {
+				// Extract signature from path of the signature file itself
+				sigID = fileNameWOExt(sigFile)
+			}
 
 			// First get the list of all checks to perform from file
 			myChecks := sigFileContent.Checks
