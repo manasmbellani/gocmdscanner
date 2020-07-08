@@ -680,6 +680,10 @@ func main() {
 				}
 			}
 
+			// Define some additional aliases useful for sub'bing in YAML file
+			target["host"] = target["hostname"]
+			target["domain"] = target["hostname"]
+
 			log.Printf("Adding target for processing: %+v\n", target)
 			targets <- target
 
