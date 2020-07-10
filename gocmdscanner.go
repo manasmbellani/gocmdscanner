@@ -52,6 +52,7 @@ type signFileStruct struct {
 		Name string `yaml:"name"`
 	} `yaml:"info"`
 	Notes    string     `yaml:"notes"`
+	Outfile  string     `yaml:"outfile"`
 	Author   string     `yaml:"author"`
 	Severity string     `yaml:"severity"`
 	Checks   []sigCheck `yaml:"checks"`
@@ -294,10 +295,19 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 				sigID = fileNameWOExt(sigFile)
 			}
 
-			// Are there any general notes to print
-			notesToPrint := ""
-			if sigFileContent.Notes != "" {
-				notesToPrint = sigFileContent.Notes
+			// Are there any general notes to print from the signature file
+			sigFilesNotesToPrint := ""
+			sigFilesNotesToPrint = subTargetParams(sigFileContent.Notes, target)
+			if sigFilesNotesToPrint != "" {
+				log.Printf(sigFilesNotesToPrint)
+			}
+
+			// Write the notes to output file
+			outfile := subTargetParams(sigFileContent.Outfile, target)
+			if outfile != "" {
+				contentToWrite := sigFilesNotesToPrint
+
+				ioutil.WriteFile(outfile, []byte(contentToWrite), 0644)
 			}
 
 			// First get the list of all checks to perform from file
@@ -419,7 +429,7 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 					}
 
 					// Are there any special notes? Write them to the output
-					notesToPrint = subTargetParams(myCheck.Notes, target)
+					checkNotesToPrint := subTargetParams(myCheck.Notes, target)
 
 					// If verbose mode is set, then print commands output and the
 					// requests output - useful for debugging
@@ -431,8 +441,8 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 						log.Printf(requestOutput)
 					}
 
-					if notesToPrint != "" {
-						log.Printf("[!] " + notesToPrint)
+					if checkNotesToPrint != "" {
+						log.Printf("[!] " + checkNotesToPrint)
 					}
 
 					// Check if we need to store output to output file
@@ -441,8 +451,14 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 
 						// Get the command, web request, notes output together
 						// to write to file
-						contentToWrite := cmdsOutput + "\n" + requestOutput +
-							"\n[!] " + notesToPrint
+						contentToWrite := cmdsOutput + "\n" + requestOutput
+						if sigFilesNotesToPrint != "" {
+							contentToWrite += "\n[!] " + sigFilesNotesToPrint
+						}
+
+						if checkNotesToPrint != "" {
+							contentToWrite += "\n[!] " + checkNotesToPrint
+						}
 
 						// Write output to file
 						outfile = subTargetParams(outfile, target)
