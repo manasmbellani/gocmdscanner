@@ -51,6 +51,7 @@ type signFileStruct struct {
 	Info struct {
 		Name string `yaml:"name"`
 	} `yaml:"info"`
+	Notes    string     `yaml:"notes"`
 	Author   string     `yaml:"author"`
 	Severity string     `yaml:"severity"`
 	Checks   []sigCheck `yaml:"checks"`
@@ -293,6 +294,12 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 				sigID = fileNameWOExt(sigFile)
 			}
 
+			// Are there any general notes to print
+			notesToPrint := ""
+			if sigFileContent.Notes != "" {
+				notesToPrint = sigFileContent.Notes
+			}
+
 			// First get the list of all checks to perform from file
 			myChecks := sigFileContent.Checks
 
@@ -412,10 +419,7 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 					}
 
 					// Are there any special notes? Write them to the output
-					notes := myCheck.Notes
-					if notes != "" {
-						cmdsOutput += "\n[!] " + subTargetParams(notes, target)
-					}
+					notesToPrint = subTargetParams(myCheck.Notes, target)
 
 					// If verbose mode is set, then print commands output and the
 					// requests output - useful for debugging
@@ -427,12 +431,18 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 						log.Printf(requestOutput)
 					}
 
+					if notesToPrint != "" {
+						log.Printf("[!] " + notesToPrint)
+					}
+
 					// Check if we need to store output to output file
 					outfile := myCheck.Outfile
 					if outfile != "" {
 
-						// Get the command and web request output together to write to file
-						contentToWrite := cmdsOutput + "\n" + requestOutput
+						// Get the command, web request, notes output together
+						// to write to file
+						contentToWrite := cmdsOutput + "\n" + requestOutput +
+							"\n[!] " + notesToPrint
 
 						// Write output to file
 						outfile = subTargetParams(outfile, target)
