@@ -141,7 +141,10 @@ func execCmd(cmdToExec string, cmdDir string) string {
 
 	// Switch to the directory
 	if cmdDir != "" {
-		os.Chdir(cmdDir)
+		err := os.Chdir(cmdDir)
+		if err != nil {
+			log.Printf("[-] Could not switch to dir: %s. Does it exist?", cmdDir)
+		}
 	}
 
 	// Get my current working directory
