@@ -632,6 +632,9 @@ func main() {
 
 			target := make(map[string]string)
 
+			// Add original input line also into the target
+			target["input"] = line
+
 			if len(lineSplits) == 1 {
 
 				target["protocol"] = DefProtocol
