@@ -63,6 +63,7 @@ type sigCheck struct {
 	Cmethod    string   `yaml:"cmethod"`
 	Cmd        []string `yaml:"cmd"`
 	CmdDir     string   `yaml:"cmddir"`
+	JoinCmds   bool     `yaml:"joincmds"`
 	URLs       []string `yaml:"url"`
 	HTTPMethod string   `yaml:"method"`
 	Body       []struct {
@@ -324,22 +325,44 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 					// Get the commmand directory to execute this command in
 					cmdDir := myCheck.CmdDir
 
-					// Run all the commands and collect output
+					// Get commands to execute from signature file
+					cmdsToExec := myCheck.Cmd
+
+					// Join commands to execute
+					joinCmds := myCheck.JoinCmds
+
 					cmdsOutput := ""
 					requestOutput := ""
-					cmdsToExec := myCheck.Cmd
-					for _, cmdToExec := range cmdsToExec {
 
-						// Run the commands, if not empty
-						if cmdToExec != "" {
-							cmdsToExecSub := subTargetParams(cmdToExec, target)
-							cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
-						}
+					if joinCmds {
+						// Commands should be joined together and executed
+						joinedCmd := strings.Join(cmdsToExec, "; ")
+
+						// Execute commands
+						cmdsToExecSub := subTargetParams(joinedCmd, target)
+						cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
 
 						// Check for a match from response
 						matcherFound := runMatch(myCheck, cmdsOutput)
 						if matcherFound {
 							fmt.Println(formatDetection(sigID, target))
+						}
+					} else {
+
+						// Run all the commands and collect output
+						for _, cmdToExec := range cmdsToExec {
+
+							// Run the commands, if not empty
+							if cmdToExec != "" {
+								cmdsToExecSub := subTargetParams(cmdToExec, target)
+								cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
+							}
+
+							// Check for a match from response
+							matcherFound := runMatch(myCheck, cmdsOutput)
+							if matcherFound {
+								fmt.Println(formatDetection(sigID, target))
+							}
 						}
 					}
 
