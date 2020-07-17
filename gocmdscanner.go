@@ -209,8 +209,9 @@ func formatDetection(sigID string, target map[string]string) string {
 		if fullURLPathFound {
 			pathToPrint = "[" + sigID + "] " + fullURLPath
 		} else {
-			pathToPrint = "[" + sigID + "] " + target["protocol"] + "://" + target["hostname"] + ":" +
-				target["port"]
+			//pathToPrint = "[" + sigID + "] " + target["protocol"] + "://" + target["hostname"] + ":" +
+			//	target["port"]
+			pathToPrint = "[" + sigID + "] " + target["input"]
 		}
 	}
 
@@ -235,6 +236,7 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 			if noRegex != "" {
 				found, err := regexp.MatchString(noRegex, strToSearch)
 				if err != nil {
+					fmt.Printf("[-] Regex Error when running NoRegex search: %s\n", err.Error())
 					log.Fatalf("[-] Regex Error when running NoRegex search: %s\n", err.Error())
 				}
 				if found {
@@ -248,6 +250,7 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 			if !noRegexMatcherFound {
 				found, err := regexp.MatchString(regex, strToSearch)
 				if err != nil {
+					fmt.Printf("[-] Regex Error when running Regex search: %s\n", err.Error())
 					log.Fatalf("[-] Regex Error when running Regex search: %s\n", err.Error())
 				}
 				if found {
