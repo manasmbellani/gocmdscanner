@@ -11,6 +11,33 @@ In addition the following new features have been added:
 
 The project is inspired by the [nuclei](https://github.com/projectdiscovery/nuclei) project.
 
+## Available substitution parameters
+The following lists the parameters available for substitution in cmd, url, notes
+and other fields within a signature file. 
+
+For example, if a user supplies the following line as input to `gocmdscanner`, then the following fields will be available:
+```
+https://www.google.com:443/test/test.txt?q=1&q=2
+```
+
+* `owd`: Original current working directory aka directory user executes gocmdscanner from on the workstation.
+* `input`: Raw input line from user aka `https://www.google.com/test.txt?q=1&q=2`
+* `hostname`|`host`|`domain`: Hostname present as input aka `www.google.com`
+* `protocol`: protocol supplied aka `https`. By default, `https` is chosen.
+* `port`: port supplied aka `443`. By default, `80` if `http` supplied as protocol, or `443` if `https` supplied as protocol. 
+* `basepath`: Basepath of URL without the trailing path aka `https://www.google.com:443`
+* `path`: Path without the basepath aka `/test/test.txt?q=1&q=2`
+
+For AWS, checks where the following path is specified:
+```
+aws://default:us-west-2
+```
+
+* `owd`: Same as above.
+* `input`: Same as above aka `aws://default:us-west-2`
+* `profile`: Profile extracted from input aka `default`
+* `region`: Region extracted from input aka `us-west-2`
+
 ## Examples
 
 ### Standard Usage
