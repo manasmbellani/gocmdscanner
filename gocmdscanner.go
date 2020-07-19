@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -152,7 +153,15 @@ func execCmd(cmdToExec string, cmdDir string) string {
 
 	log.Printf("[v] Executing cmd: %s in dir: %s\n", cmdToExec, cwd)
 
-	cmd := exec.Command("/bin/bash", "-c", cmdToExec)
+	// Determine how to execute the command based on OS
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("cmd.exe", "/c", cmdToExec)
+	default:
+		cmd = exec.Command("/bin/sh", "-c", cmdToExec)
+	}
+
 	out, err := cmd.CombinedOutput()
 	var outStr, errStr string
 	if out == nil {
