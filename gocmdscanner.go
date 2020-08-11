@@ -29,10 +29,13 @@ const NumOutChars = 1000
 const Delim = "|"
 
 // DefProtocol - default protocol to use if not specified
-const DefProtocol = "https"
+const DefProtocol = "http"
 
 // DefPort - Default port to use if not specified
-const DefPort = "443"
+const DefPort = "80"
+
+// HTTPSPort - HTTPS-like port
+const HTTPSPort = "443"
 
 // DefRegion - Default AWS region
 const DefRegion = "ap-southeast-2"
@@ -96,6 +99,15 @@ func Find(slice []string, val string) (int, bool) {
 		}
 	}
 	return -1, false
+}
+
+// convertPathToAbs - convert the path to Absolute, if needed
+func convertPathToAbs(outfile string, target map[string]string) string {
+	owd := target["owd"]
+	if !filepath.IsAbs(outfile) {
+		outfile = filepath.Join(owd, outfile)
+	}
+	return outfile
 }
 
 // Find files that have the relevant extensions. By default, YAML is used.
@@ -318,11 +330,15 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 				log.Printf(sigFilesNotesToPrint)
 			}
 
-			// Write the notes to output file
+			// Build the output file
 			outfile := subTargetParams(sigFileContent.Outfile, target)
+
+			// Convert path to absolute file path
+			outfile = convertPathToAbs(outfile, target)
+
+			// Write the notes to output file
 			if outfile != "" {
 				contentToWrite := sigFilesNotesToPrint
-
 				ioutil.WriteFile(outfile, []byte(contentToWrite), 0644)
 			}
 
@@ -426,10 +442,10 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 						}
 
 						// Verbose message to be printed to let the user know
-
 						log.Printf("Make %s request to URL: %s\n", httpMethod,
 							urlToCheckSub)
 
+						log.Println("Request Body: " + strBody)
 						// Send the web request
 						resp, _ := client.Do(req)
 
@@ -453,10 +469,6 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 							// Combine status code, response headers and body
 							requestOutput = string(statusCode) + "\n" + respHeadersStr + "\n" +
 								string(respBody)
-
-							// Verbose message to be printed to let the user know
-							log.Printf("Making %s request to URL: %s\n", httpMethod,
-								urlToCheckSub)
 
 							// Check for a match from the response
 							matcherFound := runMatch(myCheck, requestOutput)
@@ -498,8 +510,13 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 							contentToWrite += "\n[!] " + checkNotesToPrint
 						}
 
-						// Write output to file
+						// Substitute params in the output file
 						outfile = subTargetParams(outfile, target)
+
+						// Convert path to absolute file path
+						outfile = convertPathToAbs(outfile, target)
+
+						// Writ the output to file
 						ioutil.WriteFile(outfile, []byte(contentToWrite), 0644)
 
 						// Let user know that we wrote results to an output file
@@ -690,6 +707,8 @@ func main() {
 							target["hostname"] = hostnamePath
 							target["path"] = ""
 						}
+
+						// Intelligently, select HTTPS port (443) for HTTPS protocol
 						if target["protocol"] == "https" {
 							target["port"] = "443"
 						} else {
@@ -705,6 +724,7 @@ func main() {
 						target["profile"] = lineSplits[0]
 						target["region"] = lineSplits[1]
 					} else {
+
 						// Input provided: <hostname>:<port>
 						target["hostname"] = lineSplits[0]
 						portPath := lineSplits[1]
@@ -716,6 +736,12 @@ func main() {
 						} else {
 							target["port"] = portPath
 							target["path"] = ""
+						}
+
+						// Intelligently guess protocol if 'HTTPSPort' present in port definition e.g. 443, 8443, 9443, etc. Otherwise,
+						// default to HTTP
+						if strings.Contains(target["port"], HTTPSPort) {
+							target["protocol"] = "https"
 						}
 					}
 				}
