@@ -49,7 +49,7 @@ const DefHTTPMethod = "GET"
 // DefUserAgent - Default user agent string
 const DefUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36"
 
-// DefTags - Default set of Tags to assign to a check
+// DefCheckTags - Default set of Tags to assign to a check
 var DefCheckTags = []string{"auto"}
 
 // Format for an Example YAML signature files
@@ -381,10 +381,10 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 
 			for _, myCheck := range myChecks {
 
-				// Get the tags to execute the checks, if not available apply default tags
+				// Get the tags to execute checks, and also add the default tags
 				checkTags := myCheck.Tags
-				if len(checkTags) <= 0 {
-					checkTags = DefCheckTags
+				for _, tag := range DefCheckTags {
+					checkTags = append(checkTags, tag)
 				}
 
 				// Determine if we should execute the method on cmethod
@@ -468,6 +468,8 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 
 						// Set the user agent string header
 						req.Header.Set("User-Agent", DefUserAgent)
+						req.Header.Set("X-Forwarded-For", "127.0.0.1")
+						req.Header.Set("X-Forwarded-Host", "127.0.0.1")
 
 						// Set custom headers if any are provided
 						if myCheck.Headers != nil {

@@ -85,7 +85,7 @@ Testing sigfile: smb_smbghost_check on target: map[basepath:https://www.google.c
 
 ```
 
-It is possible to optionally specify multiple methods of running a check using tags via `tag` param in signature file, as shown above. By then, specifying `-t` to `gocmdscanner`, it is possible to determine which checks to perform from signature files using these tags.
+It is possible to optionally specify multiple methods of running a check using tags via `tag` param in signature file, as shown above. By then, specifying `-t` to `gocmdscanner`, it is possible to determine which checks to perform from signature files using these tags. By default, ALL checks get `auto` tags when not specificed
 
 ### URL Usage
 `GoCmdScanner` can also be used for making HTTP requests and check response received, similar to how nuclei works.
