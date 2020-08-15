@@ -383,8 +383,14 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 
 				// Get the tags to execute checks, and also add the default tags
 				checkTags := myCheck.Tags
-				for _, tag := range DefCheckTags {
-					checkTags = append(checkTags, tag)
+				if len(checkTags) <= 0 {
+					checkTags = DefCheckTags
+				}
+
+				// Add 'auto' tag to the check - by default assumed automatic
+				if !contains(checkTags, "manual") &&
+					!contains(checkTags, "auto") {
+					checkTags = append(checkTags, "auto")
 				}
 
 				// Determine if we should execute the method on cmethod
