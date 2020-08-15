@@ -49,6 +49,9 @@ const DefHTTPMethod = "GET"
 // DefUserAgent - Default user agent string
 const DefUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36"
 
+// DefTags - Default set of Tags to assign to a check
+var DefCheckTags = []string{"auto"}
+
 // Format for an Example YAML signature files
 type signFileStruct struct {
 	ID   string `yaml:"id"`
@@ -65,6 +68,7 @@ type signFileStruct struct {
 // Define a separate struct for checks
 type sigCheck struct {
 	Cmethod    string   `yaml:"cmethod"`
+	Tags       []string `yaml:"tag"`
 	Cmd        []string `yaml:"cmd"`
 	CmdDir     string   `yaml:"cmddir"`
 	JoinCmds   bool     `yaml:"joincmds"`
@@ -292,11 +296,41 @@ func fileNameWOExt(filePath string) string {
 	return strings.TrimSuffix(fileName, filepath.Ext(fileName))
 }
 
+// contains - Does string array (arr) contain string (item)
+func contains(arr []string, item string) bool {
+
+	for _, i := range arr {
+		if i == item {
+			return true
+		}
+	}
+	return false
+}
+
+// execCheckBasedOnTag - Execute check based on tag
+func execCheckBasedOnTags(checkTags []string, tagsToExec string) bool {
+	tagsToExecArr := strings.Split(tagsToExec, ",")
+
+	// If tags to execute is set to 'all', then just execute the check
+	if tagsToExec == "all" {
+		return true
+	}
+
+	allTagsFound := true
+	for _, tag := range tagsToExecArr {
+		if !contains(checkTags, tag) {
+			allTagsFound = false
+			break
+		}
+	}
+	return allTagsFound
+}
+
 // Worker function parses each YAML signature file, runs relevant commands as
 // present in  each file and performs the matching operation
 func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 	targets chan map[string]string, showTargetsProcessed bool, methodToExec string,
-	wg *sync.WaitGroup) {
+	tagsToExec string, wg *sync.WaitGroup) {
 
 	// Need to let the waitgroup know that the function is done at the end...
 	defer wg.Done()
@@ -347,11 +381,14 @@ func worker(sigFileContents map[string]signFileStruct, sigFiles []string,
 
 			for _, myCheck := range myChecks {
 
-				// get the method related to the check
-				cmethod := myCheck.Cmethod
+				// Get the tags to execute the checks, if not available apply default tags
+				checkTags := myCheck.Tags
+				if len(checkTags) <= 0 {
+					checkTags = DefCheckTags
+				}
 
-				// Determine if we should execute the method OR not
-				if methodToExec == "all" || cmethod == methodToExec {
+				// Determine if we should execute the method on cmethod
+				if execCheckBasedOnTags(checkTags, tagsToExec) {
 
 					// Get the commmand directory to execute this command in
 					cmdDir := myCheck.CmdDir
@@ -538,12 +575,15 @@ func main() {
 	showTargetsProcessedPtr := flag.Bool("st", false,
 		"Show targets processed to track progress, as goroutines process targets")
 	methodToExecPtr := flag.String("cm", "all", "Methods of signature file to exec")
+	tagsToExecPtr := flag.String("t", "all", "Tags that should be present in checks. "+
+		"If multiple, then 'all' tags must be present")
 	flag.Parse()
 
 	maxThreads := *maxThreadsPtr
 	limit := *limitPtr
 	showTargetsProcessed := *showTargetsProcessedPtr
 	methodToExec := *methodToExecPtr
+	tagsToExec := *tagsToExecPtr
 
 	// Check if logging should be enabled
 	verbose := *verbosePtr
@@ -638,7 +678,7 @@ func main() {
 
 		log.Printf("Launching goroutine: %d for assessing targets\n", i)
 		go worker(sigFileContents, sigFiles, targets, showTargetsProcessed,
-			methodToExec, &wg)
+			methodToExec, tagsToExec, &wg)
 	}
 
 	log.Println("Disabling SSL Certificate checks for http client")

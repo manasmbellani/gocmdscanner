@@ -52,7 +52,8 @@ info:
     severity: high
 
 checks:
-    - cmethod: nmap
+    - tag: 
+       - nmap
       cmd:
       -  "nmap -sS -Pn --script=smb-protocols -p{port} {hostname}"
       outfile: "/tmp/out-smb-ghostcheck-cve-2020-0796-{hostname}-{port}.txt"
@@ -84,7 +85,7 @@ Testing sigfile: smb_smbghost_check on target: map[basepath:https://www.google.c
 
 ```
 
-It is possible to optionally specify multiple methods of running a check using `cmethod` param in the signature file, as shown above. By then, specifying `-cm` to `gocmdscanner`, it is possible to determine which checks to perform from signature files.
+It is possible to optionally specify multiple methods of running a check using tags via `tag` param in signature file, as shown above. By then, specifying `-t` to `gocmdscanner`, it is possible to determine which checks to perform from signature files using these tags.
 
 ### URL Usage
 `GoCmdScanner` can also be used for making HTTP requests and check response received, similar to how nuclei works.
