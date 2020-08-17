@@ -416,9 +416,12 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 				// Get commands to execute from signature file
 				cmdsToExec := myCheck.Cmd
 
-				// Get the timeout for execution of command
+				// Get the timeout for execution of command. If not provided,
+				// default to the global command timeout value
 				cmdtimeout := myCheck.CmdTimeout
-				cmdtimeout = cmdTimeoutGlobal
+				if cmdtimeout == 0 {
+					cmdtimeout = cmdTimeoutGlobal
+				}
 
 				// Join commands to execute
 				joinCmds := myCheck.JoinCmds
