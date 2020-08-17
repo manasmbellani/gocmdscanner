@@ -238,16 +238,15 @@ func subTargetParams(cmdToExec string, targetParams map[string]string) string {
 
 // Print the information about the target that has been discovered matching
 // the pattern. For web detections, display additional path as well.
-func formatDetection(sigID string, target map[string]string) string {
+func formatDetection(sigID string, target map[string]string, fullURLPath string) string {
 
 	pathToPrint := ""
 	if target["protocol"] == "aws" {
 		pathToPrint = "[" + sigID + "] " + target["protocol"] + "://" +
 			target["profile"] + ":" + target["region"]
 	} else {
-		fullURLPath, fullURLPathFound := target["fullURLPath"]
 
-		if fullURLPathFound {
+		if fullURLPath != "" {
 			pathToPrint = "[" + sigID + "] " + fullURLPath
 		} else {
 			//pathToPrint = "[" + sigID + "] " + target["protocol"] + "://" + target["hostname"] + ":" +
@@ -361,6 +360,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 			fmt.Fprintf(os.Stderr, "[*] Testing sigfile: %s on target: %+v\n",
 				sigFile, target)
 		}
+		//targetLock.RUnlock()
 
 		// Get the signature file content previously opened and read
 		sigFileContent := sigFileContents[sigFile]
@@ -441,7 +441,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 					// Check for a match from response
 					matcherFound := runMatch(myCheck, cmdsOutput)
 					if matcherFound {
-						fmt.Println(formatDetection(sigID, target))
+						fmt.Println(formatDetection(sigID, target, ""))
 					}
 				} else {
 
@@ -457,7 +457,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 						// Check for a match from response
 						matcherFound := runMatch(myCheck, cmdsOutput)
 						if matcherFound {
-							fmt.Println(formatDetection(sigID, target))
+							fmt.Println(formatDetection(sigID, target, ""))
 						}
 					}
 				}
@@ -473,7 +473,6 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 
 					// Build the URL to request + save it
 					urlToCheckSub := subTargetParams(urlToCheck, target)
-					target["fullURLPath"] = urlToCheckSub
 
 					// Build a HTTP request template
 					client := &http.Client{}
@@ -540,7 +539,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 						// Check for a match from the response
 						matcherFound := runMatch(myCheck, requestOutput)
 						if matcherFound {
-							fmt.Println(formatDetection(sigID, target))
+							fmt.Println(formatDetection(sigID, target, urlToCheckSub))
 						}
 					}
 				}
