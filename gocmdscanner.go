@@ -344,7 +344,8 @@ func execCheckBasedOnTags(checkTags []string, tagsToExec string) bool {
 // Worker function parses each YAML signature file, runs relevant commands as
 // present in  each file and performs the matching operation
 func worker(sigFileContents map[string]signFileStruct, tasks chan task,
-	showTargetsProcessed bool, methodToExec string, tagsToExec string, wg *sync.WaitGroup) {
+	showTargetsProcessed bool, methodToExec string, tagsToExec string,
+	cmdTimeoutGlobal int, wg *sync.WaitGroup) {
 
 	// Need to let the waitgroup know that the function is done at the end...
 	defer wg.Done()
@@ -417,6 +418,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 
 				// Get the timeout for execution of command
 				cmdtimeout := myCheck.CmdTimeout
+				cmdtimeout = cmdTimeoutGlobal
 
 				// Join commands to execute
 				joinCmds := myCheck.JoinCmds
@@ -600,6 +602,9 @@ func main() {
 	methodToExecPtr := flag.String("cm", "all", "Methods of signature file to exec")
 	tagsToExecPtr := flag.String("t", "all", "Tags that should be present in checks. "+
 		"If multiple, then 'all' tags must be present")
+	cmdTimeoutGlobal := flag.Int("ct", 600, "Global timeout for all commands. "+
+		"Only applicable for CMD commands and linux instances. Set to -1 to "+
+		"disable any timeout setting.")
 	flag.Parse()
 
 	maxThreads := *maxThreadsPtr
@@ -701,7 +706,7 @@ func main() {
 
 		log.Printf("Launching goroutine: %d for assessing targets\n", i)
 		go worker(sigFileContents, tasks, showTargetsProcessed,
-			methodToExec, tagsToExec, &wg)
+			methodToExec, tagsToExec, *cmdTimeoutGlobal, &wg)
 	}
 
 	log.Println("Disabling SSL Certificate checks for http client")
