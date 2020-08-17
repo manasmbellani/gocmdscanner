@@ -176,7 +176,8 @@ func execCmd(cmdToExec string, cmdDir string, cmdtimeout int) string {
 	// Get my current working directory
 	cwd, _ := os.Getwd()
 
-	log.Printf("[v] Executing cmd: %s in dir: %s\n", cmdToExec, cwd)
+	log.Printf("[v] Executing cmd: %s in dir: %s with timeout: %d\n", cmdToExec, cwd,
+		cmdtimeout)
 
 	// Determine how to execute the command based on OS
 	var cmd *exec.Cmd
@@ -184,7 +185,7 @@ func execCmd(cmdToExec string, cmdDir string, cmdtimeout int) string {
 	case "windows":
 		cmd = exec.Command("cmd.exe", "/c", cmdToExec)
 	default:
-		if cmdtimeout == -1 {
+		if cmdtimeout == -1 || cmdtimeout == 0 {
 			cmd = exec.Command("/bin/sh", "-c", cmdToExec)
 		} else {
 			timeoutstr := fmt.Sprintf("%d", cmdtimeout)
