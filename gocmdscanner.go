@@ -78,6 +78,7 @@ type sigCheck struct {
 	Tags       []string `yaml:"tag"`
 	Cmd        []string `yaml:"cmd"`
 	CmdDir     string   `yaml:"cmddir"`
+	CmdTimeout int      `yaml:"cmdtimeout"`
 	JoinCmds   bool     `yaml:"joincmds"`
 	URLs       []string `yaml:"url"`
 	HTTPMethod string   `yaml:"method"`
@@ -159,7 +160,8 @@ func parseSigFile(sigFile string) signFileStruct {
 
 // Execute a command to get the output, error. Command is executed when in the
 // optionally specified 'cmdDir' OR it is executed with the current working dir
-func execCmd(cmdToExec string, cmdDir string) string {
+func execCmd(cmdToExec string, cmdDir string, cmdtimeout int) string {
+
 	// Get the original working directory
 	owd, _ := os.Getwd()
 
@@ -182,7 +184,13 @@ func execCmd(cmdToExec string, cmdDir string) string {
 	case "windows":
 		cmd = exec.Command("cmd.exe", "/c", cmdToExec)
 	default:
-		cmd = exec.Command("/bin/sh", "-c", cmdToExec)
+		if cmdtimeout == -1 {
+			cmd = exec.Command("/bin/sh", "-c", cmdToExec)
+		} else {
+			timeoutstr := fmt.Sprintf("%d", cmdtimeout)
+			cmd = exec.Command("timeout", timeoutstr, "/bin/sh", "-c", cmdToExec)
+
+		}
 	}
 
 	out, err := cmd.CombinedOutput()
@@ -407,6 +415,9 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 				// Get commands to execute from signature file
 				cmdsToExec := myCheck.Cmd
 
+				// Get the timeout for execution of command
+				cmdtimeout := myCheck.CmdTimeout
+
 				// Join commands to execute
 				joinCmds := myCheck.JoinCmds
 
@@ -419,7 +430,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 
 					// Execute commands
 					cmdsToExecSub := subTargetParams(joinedCmd, target)
-					cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
+					cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir, cmdtimeout)
 
 					// Check for a match from response
 					matcherFound := runMatch(myCheck, cmdsOutput)
@@ -434,7 +445,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 						// Run the commands, if not empty
 						if cmdToExec != "" {
 							cmdsToExecSub := subTargetParams(cmdToExec, target)
-							cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir)
+							cmdsOutput = cmdsOutput + "\n" + execCmd(cmdsToExecSub, cmdDir, cmdtimeout)
 						}
 
 						// Check for a match from response
