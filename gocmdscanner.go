@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v2"
 )
@@ -78,7 +79,7 @@ type sigCheck struct {
 	Tags       []string `yaml:"tag"`
 	Cmd        []string `yaml:"cmd"`
 	CmdDir     string   `yaml:"cmddir"`
-	CmdTimeout int      `yaml:"cmdtimeout"`
+	CmdTimeout uint     `yaml:"cmdtimeout"`
 	JoinCmds   bool     `yaml:"joincmds"`
 	URLs       []string `yaml:"url"`
 	HTTPMethod string   `yaml:"method"`
@@ -160,7 +161,7 @@ func parseSigFile(sigFile string) signFileStruct {
 
 // Execute a command to get the output, error. Command is executed when in the
 // optionally specified 'cmdDir' OR it is executed with the current working dir
-func execCmd(cmdToExec string, cmdDir string, cmdtimeout int) string {
+func execCmd(cmdToExec string, cmdDir string, cmdtimeout uint) string {
 
 	// Get the original working directory
 	owd, _ := os.Getwd()
@@ -185,7 +186,7 @@ func execCmd(cmdToExec string, cmdDir string, cmdtimeout int) string {
 	case "windows":
 		cmd = exec.Command("cmd.exe", "/c", cmdToExec)
 	default:
-		if cmdtimeout == -1 || cmdtimeout == 0 {
+		if cmdtimeout == 0 {
 			cmd = exec.Command("/bin/sh", "-c", cmdToExec)
 		} else {
 			timeoutstr := fmt.Sprintf("%d", cmdtimeout)
@@ -345,7 +346,7 @@ func execCheckBasedOnTags(checkTags []string, tagsToExec string) bool {
 // present in  each file and performs the matching operation
 func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 	showTargetsProcessed bool, methodToExec string, tagsToExec string,
-	cmdTimeoutGlobal int, wg *sync.WaitGroup) {
+	cmdTimeoutGlobal uint, webTimeout uint, wg *sync.WaitGroup) {
 
 	// Need to let the waitgroup know that the function is done at the end...
 	defer wg.Done()
@@ -475,7 +476,17 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 					urlToCheckSub := subTargetParams(urlToCheck, target)
 
 					// Build a HTTP request template
-					client := &http.Client{}
+					log.Printf("Creating HTTP.Client with timeout: %d\n", webTimeout)
+					var client *http.Client
+					if webTimeout == 0 {
+						// Set no timeout
+						client = &http.Client{}
+					} else {
+						// Setting timeout
+						client = &http.Client{
+							Timeout: time.Duration(webTimeout) * time.Second,
+						}
+					}
 					var body io.Reader
 
 					// Prepare the POST body
@@ -595,29 +606,31 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 }
 
 func main() {
+	var webTimeout uint
+	var maxThreads uint
+	var limit uint
+	var verbose bool
+	var showTargetsProcessed bool
+	var cmdTimeoutGlobal uint
+	var tagsToExec string
+	var methodToExec string
+
 	pathsWithSigFiles := flag.String("paths", "",
 		"Files/folders/file-glob patterns, containing YAML signature files")
-	verbosePtr := flag.Bool("v", false, "Show commands as executed+output")
-	limitPtr := flag.Uint("limit", 0, "Limit number of host:port targets processed")
-	maxThreadsPtr := flag.Int("mt", 20, "Max number of goroutines to launch")
-	showTargetsProcessedPtr := flag.Bool("st", false,
+	flag.BoolVar(&verbose, "v", false, "Show commands as executed+output")
+	flag.UintVar(&limit, "limit", 0, "Limit number of host:port targets processed")
+	flag.UintVar(&maxThreads, "mt", 20, "Max number of goroutines to launch")
+	flag.BoolVar(&showTargetsProcessed, "st", false,
 		"Show targets processed to track progress, as goroutines process targets")
-	methodToExecPtr := flag.String("cm", "all", "Methods of signature file to exec")
-	tagsToExecPtr := flag.String("t", "all", "Tags that should be present in checks. "+
+	flag.StringVar(&methodToExec, "cm", "all", "Methods of signature file to exec")
+	flag.StringVar(&tagsToExec, "t", "all", "Tags that should be present in checks. "+
 		"If multiple, then 'all' tags must be present")
-	cmdTimeoutGlobal := flag.Int("ct", 600, "Global timeout for all commands. "+
+	flag.UintVar(&cmdTimeoutGlobal, "ct", 600, "Global timeout for all commands. "+
 		"Only applicable for CMD commands and linux instances. Set to -1 to "+
 		"disable any timeout setting.")
+	flag.UintVar(&webTimeout, "wt", 5, "timeout for HTTP web requests in seconds")
 	flag.Parse()
 
-	maxThreads := *maxThreadsPtr
-	limit := *limitPtr
-	showTargetsProcessed := *showTargetsProcessedPtr
-	methodToExec := *methodToExecPtr
-	tagsToExec := *tagsToExecPtr
-
-	// Check if logging should be enabled
-	verbose := *verbosePtr
 	if !verbose {
 		log.SetFlags(0)
 		log.SetOutput(ioutil.Discard)
@@ -704,12 +717,13 @@ func main() {
 
 	// Starting max number of concurrency threads
 	var wg sync.WaitGroup
-	for i := 1; i <= maxThreads; i++ {
+	for i := 1; i <= int(maxThreads); i++ {
 		wg.Add(1)
 
 		log.Printf("Launching goroutine: %d for assessing targets\n", i)
 		go worker(sigFileContents, tasks, showTargetsProcessed,
-			methodToExec, tagsToExec, *cmdTimeoutGlobal, &wg)
+			methodToExec, tagsToExec, cmdTimeoutGlobal, webTimeout,
+			&wg)
 	}
 
 	log.Println("Disabling SSL Certificate checks for http client")
