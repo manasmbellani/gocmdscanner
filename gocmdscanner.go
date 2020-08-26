@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"net/http/httputil"
 
 	"gopkg.in/yaml.v2"
 )
@@ -505,6 +506,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 					req, _ := http.NewRequest(httpMethod, urlToCheckSub, body)
 
 					// Set the user agent string header
+					req.Host = target["host"]
 					req.Header.Set("User-Agent", DefUserAgent)
 					req.Header.Set("X-Forwarded-For", "127.0.0.1")
 					req.Header.Set("X-Forwarded-Host", "127.0.0.1")
@@ -521,6 +523,13 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 					// Verbose message to be printed to let the user know
 					log.Printf("Make %s request to URL: %s\n", httpMethod,
 						urlToCheckSub)
+
+					log.Printf("Getting the raw HTTP request")
+					requestDump, err := httputil.DumpRequest(req, true)
+					if err != nil {
+						fmt.Println(err)
+					}
+					log.Println(string(requestDump))
 
 					log.Println("Request Body: " + strBody)
 					// Send the web request
