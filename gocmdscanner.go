@@ -188,6 +188,7 @@ func execCmd(cmdToExec string, cmdDir string, cmdtimeout uint) string {
 
 		// Prepare full command to execute which includes switching to command directory
 		fullCmdToExec := fmt.Sprintf("cd \"%s\"; %s; cd \"%s\"", cmdDir, cmdToExec, owd)
+		log.Printf("[v] fullCmdToExec: %s", fullCmdToExec)
 
 		// Determine how to execute the command based on OS
 		var cmd *exec.Cmd
