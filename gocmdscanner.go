@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +20,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"net/http/httputil"
 
 	"gopkg.in/yaml.v2"
 )
@@ -164,67 +164,73 @@ func parseSigFile(sigFile string) signFileStruct {
 // optionally specified 'cmdDir' OR it is executed with the current working dir
 func execCmd(cmdToExec string, cmdDir string, cmdtimeout uint) string {
 
-	// Get the original working directory
-	owd, _ := os.Getwd()
-
 	// Switch to the directory
-	if cmdDir != "" {
-		err := os.Chdir(cmdDir)
-		if err != nil {
-			log.Printf("[-] Could not switch to dir: %s. Does it exist?", cmdDir)
+	// if cmdDir != "" {
+	// 	err := os.Chdir(cmdDir)
+	// 	if err != nil {
+	// 		log.Printf("[-] Could not switch to dir: %s. Does it exist?", cmdDir)
+	// 	}
+	// }
+
+	totalOut := ""
+
+	_, err := os.Stat(cmdDir)
+	if os.IsNotExist(err) {
+		totalOut = fmt.Sprintf("Path: %s does not exist", cmdDir)
+
+	} else {
+		// Get the original working directory
+		owd, _ := os.Getwd()
+
+		// Let the user know the command we will be executing
+		log.Printf("[v] Executing cmd: %s in dir: %s with timeout: %d\n", cmdToExec, cmdDir,
+			cmdtimeout)
+
+		// Prepare full command to execute which includes switching to command directory
+		fullCmdToExec := fmt.Sprintf("cd \"%s\"; %s; cd \"%s\"", cmdDir, cmdToExec, owd)
+
+		// Determine how to execute the command based on OS
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "windows":
+			cmd = exec.Command("cmd.exe", "/c", fullCmdToExec)
+		default:
+			if cmdtimeout == 0 {
+				cmd = exec.Command("/bin/sh", "-c", fullCmdToExec)
+			} else {
+				timeoutstr := fmt.Sprintf("%d", cmdtimeout)
+				cmd = exec.Command("timeout", timeoutstr, "/bin/sh", "-c", fullCmdToExec)
+			}
 		}
-	}
 
-	// Get my current working directory
-	cwd, _ := os.Getwd()
-
-	log.Printf("[v] Executing cmd: %s in dir: %s with timeout: %d\n", cmdToExec, cwd,
-		cmdtimeout)
-
-	// Determine how to execute the command based on OS
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd.exe", "/c", cmdToExec)
-	default:
-		if cmdtimeout == 0 {
-			cmd = exec.Command("/bin/sh", "-c", cmdToExec)
+		out, err := cmd.CombinedOutput()
+		var outStr, errStr string
+		if out == nil {
+			outStr = ""
 		} else {
-			timeoutstr := fmt.Sprintf("%d", cmdtimeout)
-			cmd = exec.Command("timeout", timeoutstr, "/bin/sh", "-c", cmdToExec)
-
+			outStr = string(out)
 		}
+
+		if err == nil {
+			errStr = ""
+		} else {
+			errStr = string(err.Error())
+			//log.Printf("Command Error: %s\n", err)
+		}
+
+		totalOut = (outStr + "\n" + errStr)
+
+		// Print only specific number of characters
+		partialTotalOut := ""
+		if len(totalOut) > NumOutChars {
+			partialTotalOut = totalOut[:NumOutChars] + " ..."
+		} else {
+			partialTotalOut = totalOut
+		}
+
+		log.Printf("Partial Output of cmd '%s':\n%s \n", cmdToExec, partialTotalOut)
+
 	}
-
-	out, err := cmd.CombinedOutput()
-	var outStr, errStr string
-	if out == nil {
-		outStr = ""
-	} else {
-		outStr = string(out)
-	}
-
-	if err == nil {
-		errStr = ""
-	} else {
-		errStr = string(err.Error())
-		//log.Printf("Command Error: %s\n", err)
-	}
-
-	totalOut := (outStr + "\n" + errStr)
-
-	// Print only specific number of characters
-	partialTotalOut := ""
-	if len(totalOut) > NumOutChars {
-		partialTotalOut = totalOut[:NumOutChars] + " ..."
-	} else {
-		partialTotalOut = totalOut
-	}
-
-	log.Printf("Partial Output of cmd '%s':\n%s \n", cmdToExec, partialTotalOut)
-
-	// Switch back to the original working directory
-	os.Chdir(owd)
 
 	return totalOut
 }
@@ -574,7 +580,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 				}
 
 				if requestOutput != "" {
-					log.Printf(requestOutput)
+					//log.Printf(requestOutput)
 				}
 
 				if checkNotesToPrint != "" {
