@@ -172,8 +172,15 @@ func execCmd(cmdToExec string, cmdDir string, cmdtimeout uint) string {
 	// 	}
 	// }
 
+	// Store default output here
 	totalOut := ""
 
+	// Default to current working directory, if empty
+	if cmdDir == "" {
+		cmdDir, _ = os.Getwd()
+	}
+
+	// Check if cmddir even exists - otherwise, cannot execute anything
 	_, err := os.Stat(cmdDir)
 	if os.IsNotExist(err) {
 		totalOut = fmt.Sprintf("Path: %s does not exist", cmdDir)
