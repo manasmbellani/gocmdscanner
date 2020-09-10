@@ -156,3 +156,6 @@ checks:
       -  "aws sts get-caller-identity --profile={profile} --region={region}"
       outfile: "out-aws-get-caller-identity-sts-{profile}-{region}.txt"
 ```
+
+## TODO
+- [ ] Need to make de-duplicate the URLs and reuse the output, instead of making too many duplicated requests via a `map`.
