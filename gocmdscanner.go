@@ -600,7 +600,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 				}
 
 				if requestOutput != "" {
-					//log.Printf(requestOutput)
+					log.Printf(requestOutput)
 				}
 
 				if checkNotesToPrint != "" {
