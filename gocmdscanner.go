@@ -87,7 +87,8 @@ type sigCheck struct {
 	Body       []struct {
 		Name  string `yaml:"name"`
 		Value string `yaml:"value"`
-	} `yaml:body`
+	} `yaml:"body"`
+	BodyStr string `yaml:"bodystr"`
 	Headers []struct {
 		Name  string `yaml:"name"`
 		Value string `yaml:"value"`
@@ -502,9 +503,11 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 							Timeout: time.Duration(webTimeout) * time.Second,
 						}
 					}
-					var body io.Reader
 
 					// Prepare the POST body
+					var body io.Reader
+
+					// Prepare the POST Body via provided names, values params
 					var strBodyParams []string
 					if myCheck.Body != nil {
 						for _, bodySet := range myCheck.Body {
@@ -512,9 +515,12 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 							value := bodySet.Value
 							strBodyParams = append(strBodyParams, name+"="+value)
 						}
+						strBody := strings.Join(strBodyParams, "&")
+						body = strings.NewReader(strBody)
+					} else if myCheck.BodyStr != nil {
+						// Prepare the POST body via the signature's POST Body string
+						body = strings.NewReader(myCheck.BodyStr)
 					}
-					strBody := strings.Join(strBodyParams, "&")
-					body = strings.NewReader(strBody)
 
 					// Setup a request template
 					req, _ := http.NewRequest(httpMethod, urlToCheckSub, body)
