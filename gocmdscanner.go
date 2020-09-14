@@ -506,6 +506,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 
 					// Prepare the POST body
 					var body io.Reader
+					var strBody string
 
 					// Prepare the POST Body via provided names, values params
 					var strBodyParams []string
@@ -515,11 +516,12 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 							value := bodySet.Value
 							strBodyParams = append(strBodyParams, name+"="+value)
 						}
-						strBody := strings.Join(strBodyParams, "&")
+						strBody = strings.Join(strBodyParams, "&")
 						body = strings.NewReader(strBody)
-					} else if myCheck.BodyStr != nil {
+					} else if myCheck.BodyStr != "" {
 						// Prepare the POST body via the signature's POST Body string
-						body = strings.NewReader(myCheck.BodyStr)
+						strBody = myCheck.BodyStr
+						body = strings.NewReader(strBody)
 					}
 
 					// Setup a request template
@@ -551,7 +553,11 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 					}
 					log.Println(string(requestDump))
 
-					log.Println("Request Body: " + strBody)
+					// Print the POST request's body for debugging
+					if strBody != "" {
+						log.Println("POST Request Body: " + strBody)
+					}
+
 					// Send the web request
 					resp, _ := client.Do(req)
 
