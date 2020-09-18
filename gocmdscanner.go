@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -527,8 +528,16 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 					// Setup a request template
 					req, _ := http.NewRequest(httpMethod, urlToCheckSub, body)
 
+					// Get the hostname to send the request to
+					u, err := url.Parse(urlToCheckSub)
+					if err != nil {
+						log.Printf(err.Error())
+					}
+
+					// Explicitly set the host value as it helps prevent some errors
+					req.Host = u.Host
+
 					// Set the user agent string header
-					req.Host = target["host"]
 					req.Header.Set("User-Agent", DefUserAgent)
 					req.Header.Set("X-Forwarded-For", "127.0.0.1")
 					req.Header.Set("X-Forwarded-Host", "127.0.0.1")
