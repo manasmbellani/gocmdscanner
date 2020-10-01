@@ -534,21 +534,36 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 						log.Printf(err.Error())
 					}
 
-					// Explicitly set the host value as it helps prevent some errors
-					req.Host = u.Host
-
 					// Set the user agent string header
 					req.Header.Set("User-Agent", DefUserAgent)
 					req.Header.Set("X-Forwarded-For", "127.0.0.1")
 					req.Header.Set("X-Forwarded-Host", "127.0.0.1")
 
+					// Check if the Host Header has been set
+					host_header_set := false
+
 					// Set custom headers if any are provided
 					if myCheck.Headers != nil {
+
 						for _, header := range myCheck.Headers {
-							name := header.Name
-							value := header.Value
-							req.Header.Set(name, value)
+
+							if strings.ToLower(header.Name) != "host" {
+								name := header.Name
+								value := header.Value
+								req.Header.Set(name, value)
+							} else {
+								// Set the Host header in request to one requested
+								// by user
+								host_header_set = true
+								req.Host = header.Value
+							}
 						}
+
+					}
+
+					// Explicitly set the host value as it helps prevent some errors
+					if !host_header_set {
+						req.Host = u.Host
 					}
 
 					// Verbose message to be printed to let the user know

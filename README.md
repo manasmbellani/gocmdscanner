@@ -159,5 +159,5 @@ checks:
 
 ## TODO
 - [ ] Need to fix bug where cmdtimeout applies to a command and not to appended `cd`
-- [ ] Need to encode colons in URL path and query parameters to prevent 400 errors.
-- [ ] Need to make de-duplicate the URLs and reuse the output, instead of making too many duplicated requests via a `map`.
+- [ ] Need to encode colons in URL path and query parameters to prevent `400` errors.
+- [ ] Need to make de-duplicate the URLs and reuse the output, instead of making too many duplicated requests via a `map`. Also, use `usecached` boolean param to determine whether to serve cached response OR always get response again (useful for web cache poisoning checks).
