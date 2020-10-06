@@ -195,22 +195,30 @@ func execCmd(cmdToExec string, cmdDir string, cmdtimeout uint) string {
 		log.Printf("[v] Executing cmd: %s in dir: %s with timeout: %d\n", cmdToExec, cmdDir,
 			cmdtimeout)
 
-		// Prepare full command to execute which includes switching to command directory
-		fullCmdToExec := fmt.Sprintf("cd \"%s\"; %s; cd \"%s\"", cmdDir, cmdToExec, owd)
+		// Prepare full command to execute which includes switching to command directory and
+		// any timeouts provided
+		fullCmdToExec := ""
+		if cmdtimeout == 0 {
+			fullCmdToExec = fmt.Sprintf("cd \"%s\"; %s; cd \"%s\"", cmdDir, cmdToExec, owd)
+		} else {
+			switch runtime.GOOS {
+			case "windows":
+				fullCmdToExec = fmt.Sprintf("cd \"%s\"; %s; cd \"%s\"", cmdDir, cmdToExec, owd)
+			default:
+				fullCmdToExec = fmt.Sprintf("cd \"%s\"; timeout %d %s; cd \"%s\"", cmdDir, cmdtimeout, cmdToExec, owd)
+
+			}
+		}
 		log.Printf("[v] fullCmdToExec: %s", fullCmdToExec)
 
-		// Determine how to execute the command based on OS
+		// Execute the command
 		var cmd *exec.Cmd
 		switch runtime.GOOS {
+
 		case "windows":
 			cmd = exec.Command("cmd.exe", "/c", fullCmdToExec)
 		default:
-			if cmdtimeout == 0 {
-				cmd = exec.Command("/bin/sh", "-c", fullCmdToExec)
-			} else {
-				timeoutstr := fmt.Sprintf("%d", cmdtimeout)
-				cmd = exec.Command("timeout", timeoutstr, "/bin/sh", "-c", fullCmdToExec)
-			}
+			cmd = exec.Command("/bin/bash", "-c", fullCmdToExec)
 		}
 
 		out, err := cmd.CombinedOutput()
