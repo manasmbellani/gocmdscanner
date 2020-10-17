@@ -548,7 +548,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 					req.Header.Set("X-Forwarded-Host", "127.0.0.1")
 
 					// Check if the Host Header has been set
-					host_header_set := false
+					hostHeaderSet := false
 
 					// Set custom headers if any are provided
 					if myCheck.Headers != nil {
@@ -562,7 +562,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 							} else {
 								// Set the Host header in request to one requested
 								// by user
-								host_header_set = true
+								hostHeaderSet = true
 								req.Host = header.Value
 							}
 						}
@@ -570,7 +570,7 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 					}
 
 					// Explicitly set the host value as it helps prevent some errors
-					if !host_header_set {
+					if !hostHeaderSet {
 						req.Host = u.Host
 					}
 
