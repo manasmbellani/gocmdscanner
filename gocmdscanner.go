@@ -355,10 +355,10 @@ func execCheckBasedOnMethod(via string, methodToExec string) bool {
 	// Check if the methods match
 	if methodToExec == "all" {
 		shouldExecMethod = true
+	} else {
+		// Check if the method should be executed
+		shouldExecMethod = strings.Contains(via, methodToExec)
 	}
-
-	// Check if the method should be executed
-	shouldExecMethod = strings.Contains(via, methodToExec)
 
 	return shouldExecMethod
 }
