@@ -77,7 +77,7 @@ type signFileStruct struct {
 
 // Define a separate struct for checks
 type sigCheck struct {
-	Cmethod    string   `yaml:"cmethod"`
+	Via        string   `yaml:"via"`
 	Tags       []string `yaml:"tag"`
 	Cmd        []string `yaml:"cmd"`
 	CmdDir     string   `yaml:"cmddir"`
@@ -348,30 +348,26 @@ func contains(arr []string, item string) bool {
 	return false
 }
 
-// execCheckBasedOnTag - Execute check based on tag
-func execCheckBasedOnTags(checkTags []string, tagsToExec string) bool {
-	tagsToExecArr := strings.Split(tagsToExec, ",")
+// execCheckBasedOnMethod - Execute check based on tag
+func execCheckBasedOnMethod(via string, methodToExec string) bool {
+	shouldExecMethod := false
 
-	// If tags to execute is set to 'all', then just execute the check
-	if tagsToExec == "all" {
-		return true
+	// Check if the methods match
+	if methodToExec == "all" {
+		shouldExecMethod = true
 	}
 
-	allTagsFound := true
-	for _, tag := range tagsToExecArr {
-		if !contains(checkTags, tag) {
-			allTagsFound = false
-			break
-		}
-	}
-	return allTagsFound
+	// Check if the method should be executed
+	shouldExecMethod = strings.Contains(via, methodToExec)
+
+	return shouldExecMethod
 }
 
 // Worker function parses each YAML signature file, runs relevant commands as
 // present in  each file and performs the matching operation
 func worker(sigFileContents map[string]signFileStruct, tasks chan task,
-	showTargetsProcessed bool, methodToExec string, tagsToExec string,
-	cmdTimeoutGlobal uint, webTimeout uint, wg *sync.WaitGroup) {
+	showTargetsProcessed bool, methodToExec string, cmdTimeoutGlobal uint,
+	webTimeout uint, wg *sync.WaitGroup) {
 
 	// Need to let the waitgroup know that the function is done at the end...
 	defer wg.Done()
@@ -421,6 +417,8 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 		myChecks := sigFileContent.Checks
 
 		for _, myCheck := range myChecks {
+			// Method to perform the check
+			via := myCheck.Via
 
 			// Get the tags to execute checks, and also add the default tags
 			checkTags := myCheck.Tags
@@ -434,8 +432,8 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 				checkTags = append(checkTags, "auto")
 			}
 
-			// Determine if we should execute the method on cmethod
-			if execCheckBasedOnTags(checkTags, tagsToExec) {
+			// Determine if we should execute the check method based on cmethod
+			if execCheckBasedOnMethod(via, methodToExec) {
 
 				// Get the commmand directory to execute this command in
 				cmdDir := myCheck.CmdDir
@@ -679,7 +677,6 @@ func main() {
 	var verbose bool
 	var showTargetsProcessed bool
 	var cmdTimeoutGlobal uint
-	var tagsToExec string
 	var methodToExec string
 
 	pathsWithSigFiles := flag.String("paths", "",
@@ -690,8 +687,6 @@ func main() {
 	flag.BoolVar(&showTargetsProcessed, "st", false,
 		"Show targets processed to track progress, as goroutines process targets")
 	flag.StringVar(&methodToExec, "cm", "all", "Methods of signature file to exec")
-	flag.StringVar(&tagsToExec, "t", "all", "Tags that should be present in checks. "+
-		"If multiple, then 'all' tags must be present")
 	flag.UintVar(&cmdTimeoutGlobal, "ct", 600, "Global timeout for all commands. "+
 		"Only applicable for CMD commands and linux instances. Set to -1 to "+
 		"disable any timeout setting.")
@@ -789,8 +784,7 @@ func main() {
 
 		log.Printf("Launching goroutine: %d for assessing targets\n", i)
 		go worker(sigFileContents, tasks, showTargetsProcessed,
-			methodToExec, tagsToExec, cmdTimeoutGlobal, webTimeout,
-			&wg)
+			methodToExec, cmdTimeoutGlobal, webTimeout, &wg)
 	}
 
 	log.Println("Disabling SSL Certificate checks for http client")
