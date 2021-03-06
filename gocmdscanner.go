@@ -7,12 +7,9 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-resty/resty"
 	"gopkg.in/yaml.v2"
 )
 
@@ -313,7 +311,9 @@ func runMatch(checkConfig sigCheck, outputToSearch string) bool {
 
 			// Then search for positive regex
 			regex := matcher.Regex
+			//fmt.Printf("Regex, strToSearch[0:100]: %s, %s", regex, strToSearch[0:100])
 			if !noRegexMatcherFound {
+				//fmt.Printf("regex: %s, strToSearch: %s\n", regex, strToSearch[0:200])
 				found, err := regexp.MatchString(regex, strToSearch)
 				if err != nil {
 					fmt.Printf("[-] Regex Error when running Regex search: %s\n", err.Error())
@@ -367,7 +367,7 @@ func execCheckBasedOnMethod(via string, methodToExec string) bool {
 // present in  each file and performs the matching operation
 func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 	showTargetsProcessed bool, methodToExec string, cmdTimeoutGlobal uint,
-	webTimeout uint, wg *sync.WaitGroup) {
+	webTimeout uint, restyClient *resty.Client, wg *sync.WaitGroup) {
 
 	// Need to let the waitgroup know that the function is done at the end...
 	defer wg.Done()
@@ -376,13 +376,6 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 	for taskDef := range tasks {
 		sigFile := taskDef.sigFile
 		target := taskDef.target
-
-		log.Printf("[*] Testing sigfile: %s on target: %+v\n", sigFile, target)
-		if showTargetsProcessed {
-			fmt.Fprintf(os.Stderr, "[*] Testing sigfile: %s on target: %+v\n",
-				sigFile, target)
-		}
-		//targetLock.RUnlock()
 
 		// Get the signature file content previously opened and read
 		sigFileContent := sigFileContents[sigFile]
@@ -434,6 +427,13 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 
 			// Determine if we should execute the check method based on cmethod
 			if execCheckBasedOnMethod(via, methodToExec) {
+
+				log.Printf("[*] Testing sigfile: %s, method: %s on target: %+v\n",
+					sigFile, via, target)
+				if showTargetsProcessed {
+					fmt.Fprintf(os.Stderr, "[*] Testing sigfile: %s on target: %+v\n",
+						sigFile, target)
+				}
 
 				// Get the commmand directory to execute this command in
 				cmdDir := myCheck.CmdDir
@@ -490,127 +490,80 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 				urls := myCheck.URLs
 
 				for _, urlToCheck := range urls {
+					// Determine if HTTP method is supported
 					httpMethod := strings.ToUpper(myCheck.HTTPMethod)
-					if httpMethod == "" {
-						httpMethod = DefHTTPMethod
+					if (httpMethod != "GET") && (httpMethod != "POST") {
+						log.Printf("Unsupported method: %s\n", httpMethod)
 					}
 
 					// Build the URL to request + save it
 					urlToCheckSub := subTargetParams(urlToCheck, target)
 
-					// Build a HTTP request template
-					log.Printf("Creating HTTP.Client with timeout: %d\n", webTimeout)
-					var client *http.Client
-					if webTimeout == 0 {
-						// Set no timeout
-						client = &http.Client{}
-					} else {
-						// Setting timeout
-						client = &http.Client{
-							Timeout: time.Duration(webTimeout) * time.Second,
-						}
+					// Set the headers and X-Forwarded-For/X-Forwarded-Host
+					headers := make(map[string]string)
+					headers["User-Agent"] = DefUserAgent
+					headers["X-Forwarded-For"] = "127.0.0.1"
+					headers["X-Forwarded-Host"] = "127.0.0.1"
+					for _, h := range myCheck.Headers {
+						headers[h.Name] = h.Value
 					}
+					restyClient.SetHeaders(headers)
 
-					// Prepare the POST body
-					var body io.Reader
-					var strBody string
-
-					// Prepare the POST Body via provided names, values params
-					var strBodyParams []string
+					// Prepare POST body via provided names, values params
+					body := make(map[string]string)
 					if myCheck.Body != nil {
 						for _, bodySet := range myCheck.Body {
 							name := bodySet.Name
 							value := bodySet.Value
-							strBodyParams = append(strBodyParams, name+"="+value)
+							body[name] = value
 						}
-						strBody = strings.Join(strBodyParams, "&")
-						body = strings.NewReader(strBody)
-					} else if myCheck.BodyStr != "" {
-						// Prepare the POST body via the signature's POST Body string
-						strBody = myCheck.BodyStr
-						body = strings.NewReader(strBody)
-					}
-
-					// Setup a request template
-					req, _ := http.NewRequest(httpMethod, urlToCheckSub, body)
-
-					// Get the hostname to send the request to
-					u, err := url.Parse(urlToCheckSub)
-					if err != nil {
-						log.Printf(err.Error())
-					}
-
-					// Set the user agent string header
-					req.Header.Set("User-Agent", DefUserAgent)
-					req.Header.Set("X-Forwarded-For", "127.0.0.1")
-					req.Header.Set("X-Forwarded-Host", "127.0.0.1")
-
-					// Check if the Host Header has been set
-					hostHeaderSet := false
-
-					// Set custom headers if any are provided
-					if myCheck.Headers != nil {
-
-						for _, header := range myCheck.Headers {
-
-							if strings.ToLower(header.Name) != "host" {
-								name := header.Name
-								value := header.Value
-								req.Header.Set(name, value)
-							} else {
-								// Set the Host header in request to one requested
-								// by user
-								hostHeaderSet = true
-								req.Host = header.Value
-							}
-						}
-
-					}
-
-					// Explicitly set the host value as it helps prevent some errors
-					if !hostHeaderSet {
-						req.Host = u.Host
 					}
 
 					// Verbose message to be printed to let the user know
 					log.Printf("Make %s request to URL: %s\n", httpMethod,
 						urlToCheckSub)
-
-					log.Printf("Getting the raw HTTP request")
-					requestDump, err := httputil.DumpRequest(req, true)
-					if err != nil {
-						fmt.Println(err)
+					var errResty error
+					var respResty *resty.Response
+					if httpMethod == "POST" {
+						respResty, errResty = restyClient.R().SetBody(body).Post(urlToCheckSub)
+					} else {
+						respResty, errResty = restyClient.R().Get(urlToCheckSub)
 					}
-					log.Println(string(requestDump))
+
+					// Check if there was an error
+					if errResty != nil {
+						log.Println("[-] Error making request to URL: ",
+							urlToCheckSub, " Error: ", errResty)
+					}
+					log.Printf("Getting the raw HTTP request")
+					if errResty != nil {
+						fmt.Println(errResty)
+					}
 
 					// Print the POST request's body for debugging
-					if strBody != "" {
-						log.Println("POST Request Body: " + strBody)
+					if respResty.String() != "" {
+						log.Println("POST Request Body: " + respResty.String())
 					}
 
-					// Send the web request
-					resp, _ := client.Do(req)
-
-					if resp != nil {
+					if respResty != nil {
 
 						// Read the response body
-						respBody, _ := ioutil.ReadAll(resp.Body)
+						respBody := respResty.String()
 
 						// Read the response status code as string
-						statusCode := fmt.Sprintf("%d", resp.StatusCode)
+						statusCode := respResty.StatusCode()
 
 						// Read the response headers as string
-						respHeaders := resp.Header
+						respHeaders := respResty.Header()
 						respHeadersStr := ""
-						s := ""
 						for k, v := range respHeaders {
-							s = fmt.Sprintf("%s:%s", k, strings.Join(v, ","))
+							s := fmt.Sprintf("%s:%s", k, strings.Join(v, ","))
 							respHeadersStr += s + ";"
 						}
 
 						// Combine status code, response headers and body
-						requestOutput = string(statusCode) + "\n" + respHeadersStr + "\n" +
-							string(respBody)
+						requestOutput = fmt.Sprintf("%d\n%s\n%s", statusCode,
+							respHeadersStr, respBody)
 
 						// Check for a match from the response
 						matcherFound := runMatch(myCheck, requestOutput)
@@ -774,6 +727,13 @@ func main() {
 		sigFileContents[sigFile] = parseSigFile(sigFile)
 	}
 
+	// Get the Resty Web client
+	restyClient := resty.New()
+
+	// Disable SSL checks
+	restyClient.SetTLSClientConfig(&tls.Config{InsecureSkipVerify: true})
+	restyClient.SetTimeout(time.Duration(webTimeout) * time.Second)
+
 	// List of the targets URL/hostname to process
 	tasks := make(chan task)
 
@@ -784,7 +744,7 @@ func main() {
 
 		log.Printf("Launching goroutine: %d for assessing targets\n", i)
 		go worker(sigFileContents, tasks, showTargetsProcessed,
-			methodToExec, cmdTimeoutGlobal, webTimeout, &wg)
+			methodToExec, cmdTimeoutGlobal, webTimeout, restyClient, &wg)
 	}
 
 	log.Println("Disabling SSL Certificate checks for http client")
