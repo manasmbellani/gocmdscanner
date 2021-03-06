@@ -484,6 +484,12 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 							fmt.Println(formatDetection(sigID, target, ""))
 						}
 					}
+
+					// If verbose mode is set, then print commands output and the
+					// requests output - useful for debugging
+					if cmdsOutput != "" {
+						log.Printf(cmdsOutput)
+					}
 				}
 
 				// Run any web requests on URLs, if provided
@@ -540,11 +546,6 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 						fmt.Println(errResty)
 					}
 
-					// Print the POST request's body for debugging
-					if respResty.String() != "" {
-						log.Println("POST Request Body: " + respResty.String())
-					}
-
 					if respResty != nil {
 
 						// Read the response body
@@ -570,21 +571,15 @@ func worker(sigFileContents map[string]signFileStruct, tasks chan task,
 						if matcherFound {
 							fmt.Println(formatDetection(sigID, target, urlToCheckSub))
 						}
+
+						if requestOutput != "" {
+							log.Printf(requestOutput)
+						}
 					}
 				}
 
 				// Are there any special notes? Write them to the output
 				checkNotesToPrint := subTargetParams(myCheck.Notes, target)
-
-				// If verbose mode is set, then print commands output and the
-				// requests output - useful for debugging
-				if cmdsOutput != "" {
-					log.Printf(cmdsOutput)
-				}
-
-				if requestOutput != "" {
-					log.Printf(requestOutput)
-				}
 
 				if checkNotesToPrint != "" {
 					log.Printf("[!] " + checkNotesToPrint)
